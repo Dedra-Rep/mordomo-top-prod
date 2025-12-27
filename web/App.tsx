@@ -8,8 +8,7 @@ import { processUserRequest } from "./services/geminiService";
 import { COLORS, BUTLER_PHRASES } from "./constants";
 
 const App: React.FC = () => {
-  // IMPORTANTE: seu UserRole deve estar alinhado com o backend:
-  // CUSTOMER -> FREE (ou ajuste no types.ts)
+  // CUSTOMER -> FREE (alinhar com backend se necessário)
   const [role, setRole] = useState<UserRole>(UserRole.CUSTOMER);
   const [mascotState, setMascotState] = useState<MascotState>(MascotState.IDLE);
   const [lastResponse, setLastResponse] = useState<AIResponse | null>(null);
@@ -59,8 +58,8 @@ const App: React.FC = () => {
           ? BUTLER_PHRASES.INITIAL_MOBILE
           : BUTLER_PHRASES.INITIAL_DESKTOP
         : role === UserRole.AFFILIATE_PRO
-          ? BUTLER_PHRASES.PRO_WELCOME
-          : BUTLER_PHRASES.EXEC_WELCOME;
+        ? BUTLER_PHRASES.PRO_WELCOME
+        : BUTLER_PHRASES.EXEC_WELCOME;
 
     const timer = setTimeout(() => speak(greeting), 1000);
     return () => {
@@ -87,10 +86,13 @@ const App: React.FC = () => {
       setPaidPlans((prev) => new Set(Array.from(prev).concat(pendingPlan)));
       setRole(pendingPlan);
       setPendingPlan(null);
-      speak("Assinatura confirmada com sucesso! Bem-vindo ao próximo nível. Já liberei suas novas ferramentas.");
+      speak(
+        "Assinatura confirmada com sucesso! Bem-vindo ao próximo nível. Já liberei suas novas ferramentas."
+      );
     }
   };
 
+  // 🔴 AQUI ESTÁ O HANDLE SEND CORRIGIDO
   const handleSend = async (msg: string) => {
     stopSpeaking();
     setIsLoading(true);
@@ -101,8 +103,12 @@ const App: React.FC = () => {
       setLastResponse(response);
       setMascotState(MascotState.IDLE);
       speak(response.speech);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setLastResponse({
+        speech: err?.message || "Falha ao consultar /api/chat. Verifique o backend.",
+        results: [],
+      } as any);
       setMascotState(MascotState.IDLE);
     } finally {
       setIsLoading(false);
@@ -112,7 +118,9 @@ const App: React.FC = () => {
   const currentBrand = role === UserRole.CUSTOMER ? "MORDOMO.AI" : "MORDOMO.TOP";
 
   return (
-    <div className={`min-h-screen ${COLORS[role].primary} text-slate-100 transition-colors duration-700 overflow-hidden flex flex-col`}>
+    <div
+      className={`min-h-screen ${COLORS[role].primary} text-slate-100 transition-colors duration-700 overflow-hidden flex flex-col`}
+    >
       <header className="p-4 border-b border-white/5 flex justify-between items-center z-40 bg-black/40 backdrop-blur-md">
         <div className="flex items-center gap-2">
           <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center">
@@ -143,7 +151,10 @@ const App: React.FC = () => {
                 role === UserRole.AFFILIATE_PRO ? "bg-blue-600 text-white shadow-lg" : "text-slate-400"
               }`}
             >
-              {!paidPlans.has(UserRole.AFFILIATE_PRO) && <i className="fas fa-lock text-[8px]"></i>} Profissional
+              {!paidPlans.has(UserRole.AFFILIATE_PRO) && (
+                <i className="fas fa-lock text-[8px]"></i>
+              )}{" "}
+              Profissional
             </button>
 
             <button
@@ -152,7 +163,10 @@ const App: React.FC = () => {
                 role === UserRole.AFFILIATE_EXEC ? "bg-purple-600 text-white shadow-lg" : "text-slate-400"
               }`}
             >
-              {!paidPlans.has(UserRole.AFFILIATE_EXEC) && <i className="fas fa-lock text-[8px]"></i>} Executivo
+              {!paidPlans.has(UserRole.AFFILIATE_EXEC) && (
+                <i className="fas fa-lock text-[8px]"></i>
+              )}{" "}
+              Executivo
             </button>
           </div>
 
@@ -166,7 +180,12 @@ const App: React.FC = () => {
       </header>
 
       <main className="flex-1 relative pb-32 overflow-hidden">
-        <ChatInterface role={role} onSend={handleSend} lastResponse={lastResponse} isLoading={isLoading} />
+        <ChatInterface
+          role={role}
+          onSend={handleSend}
+          lastResponse={lastResponse}
+          isLoading={isLoading}
+        />
 
         <ButlerMascot
           state={mascotState}
@@ -189,7 +208,11 @@ const App: React.FC = () => {
         )}
 
         {pendingPlan && (
-          <PlanCheckout plan={pendingPlan} onCancel={() => setPendingPlan(null)} onConfirm={confirmSubscription} />
+          <PlanCheckout
+            plan={pendingPlan}
+            onCancel={() => setPendingPlan(null)}
+            onConfirm={confirmSubscription}
+          />
         )}
       </main>
     </div>
