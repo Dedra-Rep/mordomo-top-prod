@@ -2,13 +2,18 @@
 import type { AIResponse, AffiliateIDs, UserRole } from "../types";
 
 type ApiPayload = {
+  // backend pode exigir "prompt"
+  prompt: string;
+  // seu app já usa "message"
   message: string;
+  // alguns backends usam "text" também
+  text: string;
+
   role: UserRole;
   affiliateIds?: AffiliateIDs;
 };
 
 function normalizeToAIResponse(data: any): AIResponse {
-  // speech (texto curto para balão + voz)
   const speech =
     data?.speech ??
     data?.text ??
@@ -16,7 +21,6 @@ function normalizeToAIResponse(data: any): AIResponse {
     data?.message ??
     "";
 
-  // results (cards)
   const raw =
     (Array.isArray(data?.results) && data.results) ||
     (Array.isArray(data?.cards) && data.cards) ||
@@ -33,7 +37,6 @@ function normalizeToAIResponse(data: any): AIResponse {
   }));
 
   return {
-    // preserva possíveis campos extras do backend (emotion etc.), se existirem
     ...data,
     speech,
     results,
@@ -45,7 +48,14 @@ export async function processUserRequest(
   role: UserRole,
   affiliateIds: AffiliateIDs
 ): Promise<AIResponse> {
-  const payload: ApiPayload = { message, role, affiliateIds };
+  // Envia "prompt", "message" e "text" para compatibilidade total com o backend
+  const payload: ApiPayload = {
+    prompt: message,
+    message,
+    text: message,
+    role,
+    affiliateIds,
+  };
 
   const res = await fetch("/api/chat", {
     method: "POST",
@@ -53,7 +63,6 @@ export async function processUserRequest(
     body: JSON.stringify(payload),
   });
 
-  // Tenta JSON; se falhar, transforma em erro legível
   let data: any = null;
   try {
     data = await res.json();
