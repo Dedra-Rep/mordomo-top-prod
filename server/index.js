@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import { processUserRequest } from "../web/services/geminiService"; // <-- AJUSTE IMPORTANTE
+import { processUserRequest } from "./geminiService.js";
 
 const app = express();
 const PORT = process.env.PORT || 8080;
