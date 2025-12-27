@@ -9,7 +9,7 @@ const PORT = process.env.PORT || 8080;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ⚠️ Este caminho é crítico: seu Vite build precisa gerar /dist na raiz do container
+// Caminho do build do Vite (dist na raiz do projeto/container)
 const DIST_PATH = path.join(__dirname, "../dist");
 
 // 1) JSON para receber payload do chat
@@ -26,23 +26,20 @@ app.get("/health", (_, res) => {
 // 4) CHAT API (front chama aqui)
 app.post("/api/chat", async (req, res) => {
   try {
-    const body = req.body || {};
+    const { prompt, message, role, affiliateIds } = req.body || {};
 
-    // ✅ Aceita prompt OU message OU text
-    const promptRaw = body.prompt ?? body.message ?? body.text ?? "";
-    const prompt = typeof promptRaw === "string" ? promptRaw.trim() : "";
+    // Aceita tanto "prompt" quanto "message"
+    const userPrompt = typeof prompt === "string" ? prompt : message;
 
-    if (!prompt) {
+    if (!userPrompt || typeof userPrompt !== "string") {
       return res.status(400).json({ error: "prompt_required" });
     }
 
-    const role = typeof body.role === "string" ? body.role : "FREE";
-    const affiliateIds =
-      body.affiliateIds && typeof body.affiliateIds === "object"
-        ? body.affiliateIds
-        : {};
+    const safeRole = typeof role === "string" ? role : "FREE";
+    const safeAffiliateIds =
+      affiliateIds && typeof affiliateIds === "object" ? affiliateIds : {};
 
-    const aiResponse = await processUserRequest(prompt, role, affiliateIds);
+    const aiResponse = await processUserRequest(userPrompt, safeRole, safeAffiliateIds);
     return res.json(aiResponse);
   } catch (err) {
     console.error("API /api/chat error:", err);
@@ -50,10 +47,11 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-// 5) SPA fallback
+// 5) SPA fallback (qualquer rota volta pro index.html)
 app.get("*", (_, res) => {
   res.sendFile(path.join(DIST_PATH, "index.html"));
 });
 
-app.listen(PORT, () => {
-  console.log(
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Mordomo rodando na porta ${PORT}`);
+});
