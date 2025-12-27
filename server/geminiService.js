@@ -1,6 +1,12 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
+const getAI = () => {
+  const key = process.env.API_KEY;
+  if (!key) {
+    throw new Error("Missing API_KEY env var (Cloud Run -> Variables)");
+  }
+  return new GoogleGenAI({ apiKey: key });
+};
 
 const SYSTEM_INSTRUCTION_BASE = `
 Você é o Mordomo.AI (mascote do Mordomo.top).
@@ -40,10 +46,10 @@ const responseSchema = {
           observacoes: { type: Type.STRING },
           link_afiliado: { type: Type.STRING },
           link_tipo: { type: Type.STRING },
-          link_confidence: { type: Type.STRING }
+          link_confidence: { type: Type.STRING },
         },
-        required: ["rank", "rotulo", "nome", "link_afiliado"]
-      }
+        required: ["rank", "rotulo", "nome", "link_afiliado"],
+      },
     },
     speech: { type: Type.STRING },
     emotion: { type: Type.STRING },
@@ -53,39 +59,65 @@ const responseSchema = {
         avatar_state: { type: Type.STRING },
         allow_interrupt: { type: Type.BOOLEAN },
         show_bell: { type: Type.BOOLEAN },
-        show_dismiss: { type: Type.BOOLEAN }
-      }
-    }
+        show_dismiss: { type: Type.BOOLEAN },
+      },
+    },
   },
-  required: ["mode", "pedido_do_cliente", "speech", "results"]
+  required: ["mode", "pedido_do_cliente", "speech", "results"],
 };
 
-// roles simples (string) para não depender de types TS no backend
 const ROLE = {
   FREE: "FREE",
   AFFILIATE_PRO: "AFFILIATE_PRO",
   AFFILIATE_EXEC: "AFFILIATE_EXEC",
 };
 
+// fallback seguro se o modelo der erro
+async function safeGenerate(ai, payload) {
+  try {
+    return await ai.models.generateContent(payload);
+  } catch (e) {
+    // fallback para flash se pro falhar
+    if (payload.model !== "gemini-3-flash-preview") {
+      return await ai.models.generateContent({ ...payload, model: "gemini-3-flash-preview" });
+    }
+    throw e;
+  }
+}
+
 export async function processUserRequest(prompt, role = ROLE.FREE, affiliateIds = {}) {
   const ai = getAI();
 
-  // IDs de modelo confirmados na doc oficial
-  // Gemini 3 Pro Preview: gemini-3-pro-preview
-  // Gemini 3 Flash Preview: gemini-3-flash-preview
   const modelName = role === ROLE.AFFILIATE_EXEC ? "gemini-3-pro-preview" : "gemini-3-flash-preview";
+  const amazonTag = affiliateIds?.amazon || "mordomoai-20";
 
-  const amazonTag = affiliateIds.amazon || "mordomoai-20";
-
-  const response = await ai.models.generateContent({
+  const payload = {
     model: modelName,
     contents: prompt,
     config: {
       systemInstruction: `${SYSTEM_INSTRUCTION_BASE}\nTAG ATIVA: ${amazonTag}. USUÁRIO ATUAL: ${role}.`,
       responseMimeType: "application/json",
-      responseSchema
-    }
-  });
+      responseSchema,
+    },
+  };
 
-  return JSON.parse(response.text || "{}");
+  const response = await safeGenerate(ai, payload);
+
+  // segurança contra resposta não-JSON
+  const text = response?.text || "";
+  try {
+    const parsed = JSON.parse(text);
+    // sanity
+    if (!parsed || typeof parsed !== "object") throw new Error("bad_json");
+    if (!parsed.results) parsed.results = [];
+    if (!parsed.speech) parsed.speech = "Você pediu: Entendi. Vamos tentar de novo.";
+    return parsed;
+  } catch {
+    return {
+      mode: "fallback",
+      pedido_do_cliente: prompt,
+      results: [],
+      speech: "Você pediu: Entendi. Tive um erro ao formatar a resposta. Tente novamente.",
+    };
+  }
 }
