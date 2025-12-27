@@ -1,35 +1,30 @@
 import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const app = express();
-app.use(express.json({ limit: "1mb" }));
+const PORT = process.env.PORT || 8080;
 
-// Healthcheck (Cloud Run / monitoramento)
-app.get("/health", (req, res) => res.status(200).send("ok"));
+// Resolver __dirname em ESModules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-// Página base de produção
-app.get("/", (req, res) => {
-  res.status(200).send(`
-    <html>
-      <head><title>Mordomo.top</title></head>
-      <body style="font-family: Arial; padding: 24px;">
-        <h1>Mordomo.top — Produção</h1>
-        <p>Base profissional ativa.</p>
-        <p><a href="/health">/health</a></p>
-      </body>
-    </html>
-  `);
+// Caminho do build do Vite
+const DIST_PATH = path.join(__dirname, "../dist");
+
+// Servir arquivos estáticos do frontend
+app.use(express.static(DIST_PATH));
+
+// Healthcheck (mantém o que já funciona)
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok" });
 });
 
-// Endpoint base (IA entra depois)
-app.post("/api/chat", async (req, res) => {
-  const { message } = req.body || {};
-  res.json({
-    ok: true,
-    reply: `Base de produção ativa. Mensagem recebida: ${message ?? "(vazia)"}`
-  });
+// Qualquer rota → React
+app.get("*", (req, res) => {
+  res.sendFile(path.join(DIST_PATH, "index.html"));
 });
 
-const port = process.env.PORT || 8080;
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
+app.listen(PORT, () => {
+  console.log(`🚀 Mordomo rodando na porta ${PORT}`);
 });
