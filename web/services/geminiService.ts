@@ -1,53 +1,73 @@
 // web/services/geminiService.ts
+import type { AIResponse, AffiliateIDs, UserRole } from "../types";
 
-export type AIResultItem = {
-  rotulo?: string;           // "MAIS BARATO" | "OPÇÃO 1" | ...
-  nome?: string;             // título do produto
-  porque?: string;           // justificativa
-  observacoes?: string;      // extra
-  link_afiliado?: string;    // link final
+type ApiPayload = {
+  message: string;
+  role: UserRole;
+  affiliateIds?: AffiliateIDs;
 };
 
-export type AIResponse = {
-  speech?: string;
-  results?: AIResultItem[];
-};
-
-export async function chat(message: string): Promise<AIResponse> {
-  const res = await fetch("/api/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
-  });
-
-  const data = await res.json().catch(() => ({}));
-
-  if (!res.ok) {
-    throw new Error(data?.error || data?.message || `Erro HTTP ${res.status}`);
-  }
-
-  // Normaliza vários formatos possíveis do backend para o que o ChatInterface espera:
+function normalizeToAIResponse(data: any): AIResponse {
+  // speech (texto curto para balão + voz)
   const speech =
-    data?.speech ||
-    data?.text ||
-    data?.answer ||
-    data?.message ||
+    data?.speech ??
+    data?.text ??
+    data?.answer ??
+    data?.message ??
     "";
 
-  const results =
+  // results (cards)
+  const raw =
     (Array.isArray(data?.results) && data.results) ||
     (Array.isArray(data?.cards) && data.cards) ||
     (Array.isArray(data?.items) && data.items) ||
+    (Array.isArray(data?.products) && data.products) ||
     [];
 
-  // Se o backend devolver cards com chaves diferentes, tenta mapear:
-  const normalizedResults = results.map((x: any) => ({
-    rotulo: x?.rotulo ?? x?.badge ?? x?.label,
-    nome: x?.nome ?? x?.title ?? x?.name,
-    porque: x?.porque ?? x?.reason ?? x?.why,
-    observacoes: x?.observacoes ?? x?.notes ?? x?.obs,
-    link_afiliado: x?.link_afiliado ?? x?.url ?? x?.link,
+  const results = raw.map((x: any) => ({
+    rotulo: x?.rotulo ?? x?.badge ?? x?.label ?? "OPÇÃO",
+    nome: x?.nome ?? x?.title ?? x?.name ?? "Recomendação",
+    porque: x?.porque ?? x?.reason ?? x?.why ?? "",
+    observacoes: x?.observacoes ?? x?.notes ?? x?.obs ?? "",
+    link_afiliado: x?.link_afiliado ?? x?.url ?? x?.link ?? "",
   }));
 
-  return { speech, results: normalizedResults };
+  return {
+    // preserva possíveis campos extras do backend (emotion etc.), se existirem
+    ...data,
+    speech,
+    results,
+  } as AIResponse;
+}
+
+export async function processUserRequest(
+  message: string,
+  role: UserRole,
+  affiliateIds: AffiliateIDs
+): Promise<AIResponse> {
+  const payload: ApiPayload = { message, role, affiliateIds };
+
+  const res = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  // Tenta JSON; se falhar, transforma em erro legível
+  let data: any = null;
+  try {
+    data = await res.json();
+  } catch {
+    const text = await res.text().catch(() => "");
+    if (!res.ok) throw new Error(text || `Erro HTTP ${res.status} em /api/chat`);
+    data = { speech: text };
+  }
+
+  if (!res.ok) {
+    const msg =
+      data?.error || data?.message || `Erro HTTP ${res.status} em /api/chat`;
+    throw new Error(msg);
+  }
+
+  return normalizeToAIResponse(data);
 }
