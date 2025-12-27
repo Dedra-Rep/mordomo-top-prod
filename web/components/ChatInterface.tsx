@@ -8,6 +8,27 @@ type Props = {
   isLoading: boolean;
 };
 
+function badgeLabel(rotulo?: string) {
+  const r = String(rotulo || "").toUpperCase();
+  if (r.includes("MAIS")) return "MAIS BARATO";
+  if (r.includes("OPÇÃO")) return r;
+  return r || "OPÇÃO";
+}
+
+function badgeClass(rotulo?: string) {
+  const r = String(rotulo || "").toUpperCase();
+  if (r.includes("MAIS")) return "bg-amber-500/20 text-amber-300 border-amber-500/30";
+  if (r.includes("OPÇÃO 1")) return "bg-sky-500/20 text-sky-300 border-sky-500/30";
+  if (r.includes("OPÇÃO 2")) return "bg-indigo-500/20 text-indigo-300 border-indigo-500/30";
+  if (r.includes("OPÇÃO 3")) return "bg-purple-500/20 text-purple-300 border-purple-500/30";
+  return "bg-white/5 text-slate-300 border-white/10";
+}
+
+function safeResults(lastResponse: AIResponse | null) {
+  const results = (lastResponse as any)?.results;
+  return Array.isArray(results) ? results : [];
+}
+
 export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isLoading }) => {
   const [msg, setMsg] = useState("");
 
@@ -22,10 +43,12 @@ export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isL
     setMsg("");
   };
 
+  const results = safeResults(lastResponse);
+
   return (
     <div className="absolute inset-0">
-      {/* HERO CENTRAL (igual ao visual do AI Studio) */}
-      <div className="max-w-5xl mx-auto px-6 pt-16 md:pt-20">
+      {/* HERO CENTRAL (mantém o visual do AI Studio) */}
+      <div className="max-w-5xl mx-auto px-6 pt-16 md:pt-20 pb-44">
         <h2 className="text-center text-4xl md:text-6xl font-black tracking-tight">
           À sua total disposição.
         </h2>
@@ -34,7 +57,7 @@ export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isL
           {subtitle}
         </p>
 
-        {/* Badges (opcional, mas mantém a estética) */}
+        {/* Badges */}
         <div className="mt-8 flex justify-center gap-3">
           <span className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-xs font-bold uppercase tracking-wider">
             ⚡ Velocidade Máxima
@@ -44,7 +67,7 @@ export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isL
           </span>
         </div>
 
-        {/* Resposta curta do Mordomo (aparece acima do input, sem destruir layout) */}
+        {/* Resposta curta (speech) */}
         {lastResponse?.speech && (
           <div className="mt-10 mx-auto max-w-3xl">
             <div className="bg-black/25 border border-white/10 rounded-2xl p-4 text-slate-200">
@@ -55,9 +78,78 @@ export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isL
             </div>
           </div>
         )}
+
+        {/* CARDS estilo AI Studio (results) */}
+        {results.length > 0 && (
+          <div className="mt-8 mx-auto max-w-5xl">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {results.slice(0, 4).map((item: any, idx: number) => {
+                const rotulo = badgeLabel(item?.rotulo);
+                const link = String(item?.link_afiliado || "").trim();
+                const nome = String(item?.nome || "").trim();
+                const porque = String(item?.porque || "").trim();
+                const obs = String(item?.observacoes || "").trim();
+
+                return (
+                  <div
+                    key={`${rotulo}-${idx}`}
+                    className="rounded-2xl border border-white/10 bg-black/25 backdrop-blur-md p-5 hover:border-white/20 transition"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span
+                        className={`text-[11px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${badgeClass(
+                          rotulo
+                        )}`}
+                      >
+                        {rotulo}
+                      </span>
+
+                      {/* ícone “a” (amazon) apenas decorativo */}
+                      <div className="opacity-25 text-2xl font-black select-none">a</div>
+                    </div>
+
+                    <div className="mt-3">
+                      <div className="text-lg font-black leading-snug">{nome || "Recomendação"}</div>
+                      {porque && (
+                        <div className="mt-2 text-sm text-slate-300/90">{porque}</div>
+                      )}
+                      {obs && (
+                        <div className="mt-2 text-xs text-slate-400">{obs}</div>
+                      )}
+                    </div>
+
+                    <div className="mt-4">
+                      <button
+                        onClick={() => {
+                          if (!link) return;
+                          window.open(link, "_blank", "noopener,noreferrer");
+                        }}
+                        disabled={!link}
+                        className={`w-full py-3 rounded-xl font-black uppercase tracking-widest text-sm transition ${
+                          link
+                            ? "hover:opacity-90"
+                            : "opacity-50 cursor-not-allowed"
+                        }`}
+                        style={{ backgroundColor: "#f59e0b", color: "#0b1220" }}
+                      >
+                        Comprar agora
+                      </button>
+
+                      {!link && (
+                        <div className="mt-2 text-[11px] text-slate-500">
+                          Link indisponível nesta resposta.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* INPUT FIXO EMBAIXO (igual ao AI Studio) */}
+      {/* INPUT FIXO EMBAIXO */}
       <div className="absolute left-0 right-0 bottom-0 pb-6">
         <div className="max-w-5xl mx-auto px-6">
           <div className="bg-black/35 border border-white/10 rounded-full flex items-center gap-3 px-5 py-3 backdrop-blur-md">
