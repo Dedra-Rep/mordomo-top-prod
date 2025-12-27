@@ -26,17 +26,23 @@ app.get("/health", (_, res) => {
 // 4) CHAT API (front chama aqui)
 app.post("/api/chat", async (req, res) => {
   try {
-    const { prompt, role, affiliateIds } = req.body || {};
+    const body = req.body || {};
 
-    if (!prompt || typeof prompt !== "string") {
+    // ✅ Aceita prompt OU message OU text
+    const promptRaw = body.prompt ?? body.message ?? body.text ?? "";
+    const prompt = typeof promptRaw === "string" ? promptRaw.trim() : "";
+
+    if (!prompt) {
       return res.status(400).json({ error: "prompt_required" });
     }
 
-    const safeRole = typeof role === "string" ? role : "FREE";
-    const safeAffiliateIds =
-      affiliateIds && typeof affiliateIds === "object" ? affiliateIds : {};
+    const role = typeof body.role === "string" ? body.role : "FREE";
+    const affiliateIds =
+      body.affiliateIds && typeof body.affiliateIds === "object"
+        ? body.affiliateIds
+        : {};
 
-    const aiResponse = await processUserRequest(prompt, safeRole, safeAffiliateIds);
+    const aiResponse = await processUserRequest(prompt, role, affiliateIds);
     return res.json(aiResponse);
   } catch (err) {
     console.error("API /api/chat error:", err);
@@ -50,5 +56,4 @@ app.get("*", (_, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Mordomo rodando na porta ${PORT}`);
-});
+  console.log(
