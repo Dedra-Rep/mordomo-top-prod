@@ -5,23 +5,19 @@ import { fileURLToPath } from "url";
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// Resolver __dirname em ESModules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Caminho do build do Vite
+// ⚠️ ESTE CAMINHO É CRÍTICO
 const DIST_PATH = path.join(__dirname, "../dist");
 
-// Servir arquivos estáticos do frontend
 app.use(express.static(DIST_PATH));
 
-// Healthcheck (mantém o que já funciona)
-app.get("/health", (req, res) => {
+app.get("/health", (_, res) => {
   res.status(200).json({ status: "ok" });
 });
 
-// Qualquer rota → React
-app.get("*", (req, res) => {
+app.get("*", (_, res) => {
   res.sendFile(path.join(DIST_PATH, "index.html"));
 });
 
