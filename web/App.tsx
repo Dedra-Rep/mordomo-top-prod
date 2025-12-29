@@ -92,7 +92,7 @@ const App: React.FC = () => {
     }
   };
 
-  // 🔴 AQUI ESTÁ O HANDLE SEND CORRIGIDO
+  // Handle Send
   const handleSend = async (msg: string) => {
     stopSpeaking();
     setIsLoading(true);
@@ -119,7 +119,8 @@ const App: React.FC = () => {
 
   return (
     <div
-      className={`min-h-screen ${COLORS[role].primary} text-slate-100 transition-colors duration-700 overflow-hidden flex flex-col`}
+      // ✅ Removido overflow-hidden para não travar scroll no app inteiro
+      className={`min-h-screen ${COLORS[role].primary} text-slate-100 transition-colors duration-700 flex flex-col`}
     >
       <header className="p-4 border-b border-white/5 flex justify-between items-center z-40 bg-black/40 backdrop-blur-md">
         <div className="flex items-center gap-2">
@@ -151,9 +152,7 @@ const App: React.FC = () => {
                 role === UserRole.AFFILIATE_PRO ? "bg-blue-600 text-white shadow-lg" : "text-slate-400"
               }`}
             >
-              {!paidPlans.has(UserRole.AFFILIATE_PRO) && (
-                <i className="fas fa-lock text-[8px]"></i>
-              )}{" "}
+              {!paidPlans.has(UserRole.AFFILIATE_PRO) && <i className="fas fa-lock text-[8px]"></i>}{" "}
               Profissional
             </button>
 
@@ -163,9 +162,7 @@ const App: React.FC = () => {
                 role === UserRole.AFFILIATE_EXEC ? "bg-purple-600 text-white shadow-lg" : "text-slate-400"
               }`}
             >
-              {!paidPlans.has(UserRole.AFFILIATE_EXEC) && (
-                <i className="fas fa-lock text-[8px]"></i>
-              )}{" "}
+              {!paidPlans.has(UserRole.AFFILIATE_EXEC) && <i className="fas fa-lock text-[8px]"></i>}{" "}
               Executivo
             </button>
           </div>
@@ -179,7 +176,11 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main className="flex-1 relative pb-32 overflow-hidden">
+      <main
+        // ✅ Aqui está o ponto-chave: permitir rolagem vertical
+        // Mantemos relative para overlays (mascote, checkout, config) continuarem posicionados.
+        className="flex-1 relative pb-32 overflow-y-auto"
+      >
         <ChatInterface
           role={role}
           onSend={handleSend}
