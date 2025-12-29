@@ -1,18 +1,24 @@
 // web/services/amazonLinks.ts
-export const AMAZON_DEFAULT_TAG = "mordomoai-20"; // ajuste aqui se quiser outro
 
-export function buildAmazonSearchUrl(query: string, tag: string = AMAZON_DEFAULT_TAG) {
-  const q = (query || "").trim();
-  const safeQ = encodeURIComponent(q.length ? q : "produto");
+export const AMAZON_DEFAULT_TAG = "mordomoai-20"; // seu ID de afiliado Amazon
+
+export function buildAmazonSearchUrl(
+  query: string,
+  tag: string = AMAZON_DEFAULT_TAG
+) {
+  // 🔒 Blindagem total contra query vazia, null ou lixo vindo da IA
+  const q = (query || "").trim() || "produto amazon";
+  const safeQ = encodeURIComponent(q);
   const safeTag = encodeURIComponent((tag || AMAZON_DEFAULT_TAG).trim());
+
   return `https://www.amazon.com.br/s?k=${safeQ}&tag=${safeTag}`;
 }
 
 /**
  * Placeholder local (Data URI SVG).
- * - Não depende de API
- * - Sempre carrega
- * - Deixa os cards bonitos mesmo sem imagem real
+ * - Não depende de API externa
+ * - Nunca quebra
+ * - Ideal para tráfego pago
  */
 export function buildPlaceholderImage(title: string) {
   const t = (title || "Produto").trim();
@@ -29,11 +35,16 @@ export function buildPlaceholderImage(title: string) {
     <rect width="960" height="540" rx="28" fill="url(#g)"/>
     <circle cx="820" cy="120" r="88" fill="rgba(245,158,11,0.12)"/>
     <circle cx="140" cy="430" r="120" fill="rgba(56,189,248,0.10)"/>
-    <text x="60" y="290" fill="rgba(255,255,255,0.92)" font-size="38"
-      font-family="Arial, Helvetica, sans-serif" font-weight="800">
+    <text x="60" y="290"
+      fill="rgba(255,255,255,0.92)"
+      font-size="38"
+      font-family="Arial, Helvetica, sans-serif"
+      font-weight="800">
       ${escapeXml(label)}
     </text>
-    <text x="60" y="350" fill="rgba(255,255,255,0.65)" font-size="20"
+    <text x="60" y="350"
+      fill="rgba(255,255,255,0.65)"
+      font-size="20"
       font-family="Arial, Helvetica, sans-serif">
       Mordomo.AI • Amazon Brasil
     </text>
