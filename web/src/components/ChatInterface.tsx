@@ -202,4 +202,277 @@ export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isL
             padding: 18
           }}
         >
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>Resultado</div>
+              <div style={{ fontSize: 18, fontWeight: 800 }}>
+                {isLoading ? "Buscando as melhores opções..." : recs.length ? "3 opções para comparar" : "Digite ou fale um produto"}
+              </div>
+            </div>
+
+            {/* Controles de voz */}
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <label style={{ display: "inline-flex", gap: 8, alignItems: "center", fontSize: 12, color: "rgba(255,255,255,0.75)" }}>
+                <input
+                  type="checkbox"
+                  checked={autoSpeak}
+                  onChange={(e) => setAutoSpeak(e.target.checked)}
+                />
+                Falar automaticamente
+              </label>
+
+              <button
+                onClick={() => (isSpeaking ? stopSpeaking() : speak(lastResponse?.text || mascotLine))}
+                disabled={!speechSupported}
+                style={{
+                  padding: "9px 12px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "rgba(255,255,255,0.06)",
+                  color: "#fff",
+                  cursor: speechSupported ? "pointer" : "not-allowed",
+                  opacity: speechSupported ? 1 : 0.45,
+                  fontWeight: 800
+                }}
+                title={speechSupported ? "Ler em voz alta" : "Voz não suportada neste navegador"}
+              >
+                {isSpeaking ? "Parar voz" : "Falar"}
+              </button>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 12, color: "rgba(255,255,255,0.78)", fontSize: 14, lineHeight: 1.45 }}>
+            {isLoading ? "Processando sua solicitação…" : lastResponse?.text || "Exemplo: “bicicleta infantil aro 20” ou “notebook i5 16gb”."}
+          </div>
+
+          {recs.length > 0 && (
+            <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}>
+              {recs.slice(0, 3).map((it, idx) => {
+                const c = badgeStyle(it.label);
+                const img = buildPlaceholderImage(it.title);
+
+                return (
+                  <div key={idx} style={{ borderRadius: 18, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.25)", padding: 12 }}>
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        padding: "6px 10px",
+                        borderRadius: 999,
+                        border: `1px solid ${c.br}`,
+                        background: c.bg,
+                        color: c.tx,
+                        fontSize: 12,
+                        fontWeight: 800
+                      }}
+                    >
+                      {it.label}
+                    </div>
+
+                    <div style={{ marginTop: 10, borderRadius: 14, overflow: "hidden", border: "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.2)", aspectRatio: "1/1" as any }}>
+                      <img src={img} alt={it.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    </div>
+
+                    <div style={{ marginTop: 10, fontSize: 14, fontWeight: 800 }}>{it.title}</div>
+
+                    {it.priceText && <div style={{ marginTop: 6, fontSize: 13, color: "rgba(255,255,255,0.75)" }}>{it.priceText}</div>}
+                    {it.why && <div style={{ marginTop: 8, fontSize: 12, color: "rgba(255,255,255,0.62)", lineHeight: 1.35 }}>{it.why}</div>}
+
+                    <a
+                      href={it.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        marginTop: 12,
+                        display: "inline-flex",
+                        width: "100%",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: "10px 12px",
+                        borderRadius: 14,
+                        background: "#fbbf24",
+                        color: "#111827",
+                        fontWeight: 900,
+                        textDecoration: "none"
+                      }}
+                    >
+                      Ver oferta
+                    </a>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Input com microfone */}
+        <div
+          style={{
+            marginTop: 16,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            borderRadius: 18,
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(255,255,255,0.05)",
+            padding: 10
+          }}
+        >
+          <input
+            value={msg}
+            onChange={(e) => setMsg(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") send();
+            }}
+            placeholder="O que você deseja comprar ou aprender agora?"
+            style={{
+              flex: 1,
+              background: "transparent",
+              border: "none",
+              outline: "none",
+              color: "white",
+              fontSize: 14,
+              padding: "10px 10px"
+            }}
+          />
+
+          <button
+            onClick={() => (isListening ? stopListening() : startListening())}
+            disabled={!recSupported || isLoading}
+            style={{
+              width: 46,
+              height: 46,
+              borderRadius: 999,
+              border: "1px solid rgba(255,255,255,0.12)",
+              cursor: recSupported && !isLoading ? "pointer" : "not-allowed",
+              background: isListening ? "rgba(239,68,68,0.85)" : "rgba(255,255,255,0.06)",
+              color: "#fff",
+              fontWeight: 900,
+              opacity: recSupported ? 1 : 0.45
+            }}
+            title={recSupported ? (isListening ? "Parar gravação" : "Falar (microfone)") : "Reconhecimento de voz não suportado"}
+          >
+            🎙
+          </button>
+
+          <button
+            onClick={send}
+            disabled={isLoading}
+            style={{
+              width: 46,
+              height: 46,
+              borderRadius: 999,
+              border: "none",
+              cursor: isLoading ? "not-allowed" : "pointer",
+              background: "#f59e0b",
+              color: "#111827",
+              fontWeight: 900,
+              opacity: isLoading ? 0.55 : 1
+            }}
+            title="Enviar"
+          >
+            ➤
+          </button>
+        </div>
+
+        <div style={{ marginTop: 14, textAlign: "center", fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
+          MORDOMO.TOP — Inteligência de Mercado & Mentoria
+        </div>
+      </div>
+
+      {/* Mascote falante (fixo) */}
+      <div
+        style={{
+          position: "fixed",
+          left: 16,
+          bottom: 16,
+          display: "flex",
+          gap: 12,
+          alignItems: "flex-end",
+          maxWidth: 520,
+          zIndex: 50
+        }}
+      >
+        {/* Avatar simples sem depender de assets externos */}
+        <div
+          style={{
+            width: 76,
+            height: 76,
+            borderRadius: 22,
+            background: "rgba(255,255,255,0.06)",
+            border: "1px solid rgba(255,255,255,0.12)",
+            display: "grid",
+            placeItems: "center",
+            boxShadow: "0 12px 30px rgba(0,0,0,0.35)"
+          }}
+          title="Mordomo"
+        >
+          <div style={{ fontSize: 34 }}>🤵</div>
+        </div>
+
+        <div
+          style={{
+            borderRadius: 18,
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(0,0,0,0.35)",
+            padding: "12px 14px",
+            boxShadow: "0 12px 30px rgba(0,0,0,0.35)"
+          }}
+        >
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)" }}>MORDOMO</div>
+          <div style={{ marginTop: 6, fontSize: 13, color: "rgba(255,255,255,0.86)", lineHeight: 1.35, maxWidth: 420 }}>
+            {mascotLine}
+          </div>
+
+          <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              onClick={() => (isSpeaking ? stopSpeaking() : speak(mascotLine))}
+              disabled={!speechSupported}
+              style={{
+                padding: "8px 10px",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(255,255,255,0.06)",
+                color: "#fff",
+                cursor: speechSupported ? "pointer" : "not-allowed",
+                opacity: speechSupported ? 1 : 0.45,
+                fontWeight: 800,
+                fontSize: 12
+              }}
+            >
+              {isSpeaking ? "Parar" : "Ouvir"}
+            </button>
+
+            <button
+              onClick={() => (isListening ? stopListening() : startListening())}
+              disabled={!recSupported || isLoading}
+              style={{
+                padding: "8px 10px",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: isListening ? "rgba(239,68,68,0.85)" : "rgba(255,255,255,0.06)",
+                color: "#fff",
+                cursor: recSupported && !isLoading ? "pointer" : "not-allowed",
+                opacity: recSupported ? 1 : 0.45,
+                fontWeight: 800,
+                fontSize: 12
+              }}
+            >
+              {isListening ? "Ouvindo…" : "Falar"}
+            </button>
+          </div>
+
+          {!speechSupported && (
+            <div style={{ marginTop: 8, fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
+              Voz não disponível neste navegador.
+            </div>
+          )}
+          {!recSupported && (
+            <div style={{ marginTop: 8, fontSize: 11, color: "rgba(255,255,255,0.45)" }}>
+              Microfone não disponível (use Chrome/Edge).
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
