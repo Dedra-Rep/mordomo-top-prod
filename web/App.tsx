@@ -8,7 +8,6 @@ import { processUserRequest } from "./services/geminiService";
 import { COLORS, BUTLER_PHRASES } from "./constants";
 
 const App: React.FC = () => {
-  // CUSTOMER -> FREE (alinhar com backend se necessário)
   const [role, setRole] = useState<UserRole>(UserRole.CUSTOMER);
   const [mascotState, setMascotState] = useState<MascotState>(MascotState.IDLE);
   const [lastResponse, setLastResponse] = useState<AIResponse | null>(null);
@@ -16,12 +15,18 @@ const App: React.FC = () => {
   const [isMuted, setIsMuted] = useState(false);
   const [affiliateIds, setAffiliateIds] = useState<AffiliateIDs>({});
 
-  const [paidPlans, setPaidPlans] = useState<Set<UserRole>>(new Set([UserRole.CUSTOMER]));
+  const [paidPlans, setPaidPlans] = useState<Set<UserRole>>(
+    new Set([UserRole.CUSTOMER])
+  );
   const [pendingPlan, setPendingPlan] = useState<UserRole | null>(null);
 
   const synthRef = useRef<SpeechSynthesis | null>(
     typeof window !== "undefined" ? window.speechSynthesis : null
   );
+
+  /* =========================
+     FALA / MASCOTE
+  ========================== */
 
   const stopSpeaking = useCallback(() => {
     if (synthRef.current) {
@@ -31,13 +36,13 @@ const App: React.FC = () => {
   }, []);
 
   const speak = useCallback(
-    (text: string) => {
+    (text?: string) => {
       stopSpeaking();
       if (isMuted || !text) return;
       if (typeof window === "undefined") return;
 
       setMascotState(MascotState.SPEAKING);
-      const utterance = new SpeechSynthesisUtterance(text);
+      const utterance = new SpeechSynthesisUtterance(String(text));
       utterance.lang = "pt-BR";
       utterance.rate = 1.0;
       utterance.onend = () => setMascotState(MascotState.IDLE);
@@ -61,14 +66,21 @@ const App: React.FC = () => {
         ? BUTLER_PHRASES.PRO_WELCOME
         : BUTLER_PHRASES.EXEC_WELCOME;
 
-    const timer = setTimeout(() => speak(greeting), 1000);
+    const timer = setTimeout(() => speak(greeting), 800);
     return () => {
       clearTimeout(timer);
       stopSpeaking();
     };
   }, [role, speak, stopSpeaking]);
 
+  /* =========================
+     TROCA DE PLANO
+  ========================== */
+
   const handleRoleChange = (newRole: UserRole) => {
+    stopSpeaking();
+    setLastResponse(null);
+
     if (paidPlans.has(newRole)) {
       setRole(newRole);
     } else {
@@ -82,18 +94,24 @@ const App: React.FC = () => {
   };
 
   const confirmSubscription = () => {
-    if (pendingPlan) {
-      setPaidPlans((prev) => new Set(Array.from(prev).concat(pendingPlan)));
-      setRole(pendingPlan);
-      setPendingPlan(null);
-      speak(
-        "Assinatura confirmada com sucesso! Bem-vindo ao próximo nível. Já liberei suas novas ferramentas."
-      );
-    }
+    if (!pendingPlan) return;
+
+    setPaidPlans((prev) => new Set([...Array.from(prev), pendingPlan]));
+    setRole(pendingPlan);
+    setPendingPlan(null);
+
+    speak(
+      "Assinatura confirmada com sucesso. Suas novas ferramentas já estão liberadas."
+    );
   };
 
-  // Handle Send
+  /* =========================
+     ENVIO DE MENSAGEM
+  ========================== */
+
   const handleSend = async (msg: string) => {
+    if (isLoading) return;
+
     stopSpeaking();
     setIsLoading(true);
     setMascotState(MascotState.THINKING);
@@ -102,11 +120,14 @@ const App: React.FC = () => {
       const response = await processUserRequest(msg, role, affiliateIds);
       setLastResponse(response);
       setMascotState(MascotState.IDLE);
-      speak(response.speech);
+      speak(String((response as any)?.speech || ""));
     } catch (err: any) {
       console.error(err);
       setLastResponse({
-        speech: err?.message || "Falha ao consultar /api/chat. Verifique o backend.",
+        speech:
+          err?.message ||
+          "Falha ao consultar o serviço. Tente novamente em instantes.",
+        items: [],
         results: [],
       } as any);
       setMascotState(MascotState.IDLE);
@@ -117,20 +138,28 @@ const App: React.FC = () => {
 
   const currentBrand = role === UserRole.CUSTOMER ? "MORDOMO.AI" : "MORDOMO.TOP";
 
+  /* =========================
+     RENDER
+  ========================== */
+
   return (
     <div
-      // ✅ Removido overflow-hidden para não travar scroll no app inteiro
       className={`min-h-screen ${COLORS[role].primary} text-slate-100 transition-colors duration-700 flex flex-col`}
     >
+      {/* HEADER */}
       <header className="p-4 border-b border-white/5 flex justify-between items-center z-40 bg-black/40 backdrop-blur-md">
         <div className="flex items-center gap-2">
           <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center">
             <span className="text-slate-900 font-black text-xl italic">M</span>
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tighter uppercase">{currentBrand}</h1>
+            <h1 className="text-xl font-bold tracking-tighter uppercase">
+              {currentBrand}
+            </h1>
             <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-              {role === UserRole.AFFILIATE_EXEC ? "Mentor Executivo" : "Assistente Inteligente"}
+              {role === UserRole.AFFILIATE_EXEC
+                ? "Mentor Executivo"
+                : "Assistente Inteligente"}
             </span>
           </div>
         </div>
@@ -139,8 +168,10 @@ const App: React.FC = () => {
           <div className="hidden md:flex bg-white/5 rounded-full p-1 border border-white/10">
             <button
               onClick={() => handleRoleChange(UserRole.CUSTOMER)}
-              className={`px-5 py-2 rounded-full text-xs font-black uppercase transition-all ${
-                role === UserRole.CUSTOMER ? "bg-sky-600 text-white shadow-lg" : "text-slate-400"
+              className={`px-5 py-2 rounded-full text-xs font-black uppercase ${
+                role === UserRole.CUSTOMER
+                  ? "bg-sky-600 text-white"
+                  : "text-slate-400"
               }`}
             >
               Grátis
@@ -148,39 +179,38 @@ const App: React.FC = () => {
 
             <button
               onClick={() => handleRoleChange(UserRole.AFFILIATE_PRO)}
-              className={`px-5 py-2 rounded-full text-xs font-black uppercase transition-all flex items-center gap-2 ${
-                role === UserRole.AFFILIATE_PRO ? "bg-blue-600 text-white shadow-lg" : "text-slate-400"
+              className={`px-5 py-2 rounded-full text-xs font-black uppercase ${
+                role === UserRole.AFFILIATE_PRO
+                  ? "bg-blue-600 text-white"
+                  : "text-slate-400"
               }`}
             >
-              {!paidPlans.has(UserRole.AFFILIATE_PRO) && <i className="fas fa-lock text-[8px]"></i>}{" "}
               Profissional
             </button>
 
             <button
               onClick={() => handleRoleChange(UserRole.AFFILIATE_EXEC)}
-              className={`px-5 py-2 rounded-full text-xs font-black uppercase transition-all flex items-center gap-2 ${
-                role === UserRole.AFFILIATE_EXEC ? "bg-purple-600 text-white shadow-lg" : "text-slate-400"
+              className={`px-5 py-2 rounded-full text-xs font-black uppercase ${
+                role === UserRole.AFFILIATE_EXEC
+                  ? "bg-purple-600 text-white"
+                  : "text-slate-400"
               }`}
             >
-              {!paidPlans.has(UserRole.AFFILIATE_EXEC) && <i className="fas fa-lock text-[8px]"></i>}{" "}
               Executivo
             </button>
           </div>
 
           <div className="flex items-center gap-2 px-3 py-1 bg-green-900/20 rounded-full border border-green-500/30">
             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span className="text-[10px] font-bold text-green-500 uppercase tracking-tighter">
+            <span className="text-[10px] font-bold text-green-500 uppercase">
               Ativo
             </span>
           </div>
         </div>
       </header>
 
-      <main
-        // ✅ Aqui está o ponto-chave: permitir rolagem vertical
-        // Mantemos relative para overlays (mascote, checkout, config) continuarem posicionados.
-        className="flex-1 relative pb-32 overflow-y-auto"
-      >
+      {/* MAIN — ROLA NORMALMENTE */}
+      <main className="flex-1 relative pb-32 overflow-y-auto">
         <ChatInterface
           role={role}
           onSend={handleSend}
@@ -195,7 +225,7 @@ const App: React.FC = () => {
           isMuted={isMuted}
           onStop={stopSpeaking}
           onMuteToggle={() => setIsMuted(!isMuted)}
-          onDismiss={() => stopSpeaking()}
+          onDismiss={stopSpeaking}
         />
 
         {role !== UserRole.CUSTOMER && (
