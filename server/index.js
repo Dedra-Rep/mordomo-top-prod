@@ -11,9 +11,9 @@ app.use(express.json({ limit: "1mb" }));
 
 const PORT = process.env.PORT || 8080;
 
-// Aceita GEMINI_API_KEY e, por compatibilidade, API_KEY
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.API_KEY || "";
-const AMAZON_TAG = process.env.AMAZON_TAG || "mordomoai-20";
+// Aceita ambos para compatibilidade: GEMINI_API_KEY (preferido) e API_KEY (legado)
+const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || process.env.API_KEY || "").trim();
+const AMAZON_TAG = (process.env.AMAZON_TAG || "mordomoai-20").trim();
 
 function amazonSearchUrl(query, tag = AMAZON_TAG) {
   const q = encodeURIComponent(String(query || "").trim());
@@ -21,152 +21,166 @@ function amazonSearchUrl(query, tag = AMAZON_TAG) {
   return `https://www.amazon.com.br/s?k=${q}&tag=${t}`;
 }
 
-function clamp(s, n) {
+function clip(s, n) {
   const x = String(s || "").trim();
   if (!x) return "";
   return x.length > n ? x.slice(0, n - 1).trimEnd() + "…" : x;
 }
 
-function fallback(message) {
+/**
+ * Resposta padrão garantida (nunca quebra o front).
+ * Sempre retorna 3 recomendações.
+ */
+function guaranteedFallback(userMessage) {
+  const msg = clip(userMessage, 90) || "produto";
   return {
     text:
-      "Estou online. Se a IA estiver indisponível, sigo te entregando 3 opções via busca segura (Amazon).",
+      "Estou online. Vou te entregar 3 opções para comparar. Se a IA estiver instável, eu continuo sugerindo com busca segura.",
     recommendations: [
       {
         label: "MAIS BARATO",
-        title: clamp(`Mais barato: ${message}`, 80),
-        why: "Busca mais ampla priorizando preço baixo. Compare avaliações e frete.",
-        query: clamp(`${message} barato`, 80),
+        title: `Mais barato: ${msg}`,
+        why: "Priorize preço baixo e compare frete e avaliações.",
+        query: `${msg} barato`,
         priceText: "Preço varia",
-        url: amazonSearchUrl(`${message} barato`)
+        url: amazonSearchUrl(`${msg} barato`),
       },
       {
         label: "CUSTO-BENEFÍCIO",
-        title: clamp(`Custo-benefício: ${message}`, 80),
-        why: "Equilíbrio entre preço e avaliações. Veja nota e número de reviews.",
-        query: clamp(`${message} melhor custo benefício`, 80),
+        title: `Custo-benefício: ${msg}`,
+        why: "Equilíbrio entre preço, nota e número de reviews.",
+        query: `${msg} melhor custo benefício`,
         priceText: "Preço varia",
-        url: amazonSearchUrl(`${message} melhor custo benefício`)
+        url: amazonSearchUrl(`${msg} melhor custo benefício`),
       },
       {
         label: "PREMIUM",
-        title: clamp(`Premium: ${message}`, 80),
-        why: "Versões topo de linha. Confirme garantia e vendedor.",
-        query: clamp(`${message} premium`, 80),
+        title: `Premium: ${msg}`,
+        why: "Topo de linha. Verifique garantia e reputação do vendedor.",
+        query: `${msg} premium`,
         priceText: "Preço varia",
-        url: amazonSearchUrl(`${message} premium`)
-      }
-    ]
+        url: amazonSearchUrl(`${msg} premium`),
+      },
+    ],
   };
+}
+
+/**
+ * Normaliza qualquer saída (IA ou fallback) para o formato do front.
+ */
+function normalizeResponse(payload, userMessage) {
+  const base = guaranteedFallback(userMessage);
+
+  const text = clip(payload?.text || base.text, 400);
+  const recs = Array.isArray(payload?.recommendations) ? payload.recommendations : [];
+
+  // Garante 3 itens, com labels padronizados.
+  const fixed = recs.slice(0, 3).map((r, idx) => {
+    const labelRaw = String(r?.label || "").toUpperCase();
+    const label =
+      labelRaw.includes("PREMIUM")
+        ? "PREMIUM"
+        : labelRaw.includes("CUSTO")
+          ? "CUSTO-BENEFÍCIO"
+          : "MAIS BARATO";
+
+    const title = clip(r?.title || base.recommendations[idx]?.title, 110) || base.recommendations[idx].title;
+    const why = clip(r?.why || base.recommendations[idx]?.why, 180) || base.recommendations[idx].why;
+    const query = clip(r?.query || title, 120) || title;
+    const priceText = clip(r?.priceText || "Preço varia", 60) || "Preço varia";
+
+    return {
+      label,
+      title,
+      why,
+      query,
+      priceText,
+      url: amazonSearchUrl(query),
+    };
+  });
+
+  // Se IA vier com menos de 3, completa com fallback
+  while (fixed.length < 3) fixed.push(base.recommendations[fixed.length]);
+
+  return { text, recommendations: fixed };
 }
 
 app.get("/api/health", (req, res) => {
   res.json({
     ok: true,
     status: "API ativa",
-    sdk: "@google/genai",
     hasKey: Boolean(GEMINI_API_KEY),
-    amazonTag: AMAZON_TAG
+    amazonTag: AMAZON_TAG,
   });
 });
 
+/**
+ * Endpoint principal que seu layout já chama.
+ * Contrato: { message: string, role?: string }
+ * Retorno: { text: string, recommendations: [] }
+ */
 app.post("/api/chat", async (req, res) => {
   const message = String(req.body?.message || "").trim();
   const role = String(req.body?.role || "MORDOMO").trim();
 
-  if (!message) return res.status(400).json({ error: "Mensagem vazia." });
-
-  // Se não tiver chave, devolve fallback 200 (nunca quebra)
-  if (!GEMINI_API_KEY) {
-    return res.status(200).json(fallback(message));
+  if (!message) {
+    return res.status(200).json(normalizeResponse({ text: "Digite um produto para começar.", recommendations: [] }, ""));
   }
 
-  // IMPORTANTE: use o padrão da doc atual.
-  // A doc mostra: const ai = new GoogleGenAI({}); e response.text :contentReference[oaicite:1]{index=1}
+  // Sem chave? Não quebra: devolve fallback 200
+  if (!GEMINI_API_KEY) {
+    return res.status(200).json(normalizeResponse(null, message));
+  }
+
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
+  // Prompt ultra-objetivo, focado em JSON estável.
   const system = `
 Você é o Mordomo.AI (assistente de compras no Brasil).
-Objetivo: retornar EXATAMENTE 3 recomendações: MAIS BARATO, CUSTO-BENEFÍCIO, PREMIUM.
-Responda SOMENTE em JSON válido.
-Formato:
+Você deve retornar SOMENTE JSON válido no formato:
 {
-  "text":"resumo curto em pt-BR",
-  "recommendations":[
-    {"label":"MAIS BARATO","title":"...","why":"...","query":"...","priceText":"..."},
-    {"label":"CUSTO-BENEFÍCIO","title":"...","why":"...","query":"...","priceText":"..."},
-    {"label":"PREMIUM","title":"...","why":"...","query":"...","priceText":"..."}
-  ]
+ "text": "resumo curto",
+ "recommendations": [
+   {"label":"MAIS BARATO","title":"...","why":"...","query":"...","priceText":"..."},
+   {"label":"CUSTO-BENEFÍCIO","title":"...","why":"...","query":"...","priceText":"..."},
+   {"label":"PREMIUM","title":"...","why":"...","query":"...","priceText":"..."}
+ ]
 }
 Regras:
-- As 3 opções devem ser diferentes entre si.
-- Se não souber preço, use "Preço varia".
+- Sempre 3 recomendações, diferentes entre si.
 - Não invente especificações impossíveis.
+- Se não souber preço: "Preço varia".
+- query deve ser curta e direta.
 `;
 
-  const prompt = `Perfil: ${role}\nPedido do usuário: ${message}`;
+  const user = `Perfil: ${role}\nPedido: ${message}`;
 
   try {
-    // Use um modelo estável da família 2.5 (doc oficial usa 2.5 flash). :contentReference[oaicite:2]{index=2}
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: system + "\n\n" + prompt }]
-        }
-      ]
+      contents: [{ role: "user", parts: [{ text: system + "\n\n" + user }] }],
     });
 
     const raw = String(response?.text || "").trim();
 
-    let parsed;
+    let parsed = null;
     try {
       parsed = JSON.parse(raw);
     } catch {
-      // Se não vier JSON perfeito, não quebra: fallback
-      return res.status(200).json(fallback(message));
+      // IA não retornou JSON limpo. Não quebra.
+      parsed = null;
     }
 
-    const recs = Array.isArray(parsed?.recommendations) ? parsed.recommendations : [];
-    if (recs.length < 3) return res.status(200).json(fallback(message));
-
-    const normalized = recs.slice(0, 3).map((x, i) => {
-      const labelRaw = String(x?.label || "").toUpperCase();
-      const label =
-        labelRaw.includes("PREMIUM")
-          ? "PREMIUM"
-          : labelRaw.includes("CUSTO")
-            ? "CUSTO-BENEFÍCIO"
-            : "MAIS BARATO";
-
-      const title = clamp(x?.title || `Opção ${i + 1}: ${message}`, 90);
-      const why = clamp(x?.why || "Preço varia; valide reviews e frete.", 140);
-      const query = clamp(x?.query || title, 90);
-      const priceText = clamp(x?.priceText || "Preço varia", 60);
-
-      return {
-        label,
-        title,
-        why,
-        query,
-        priceText,
-        url: amazonSearchUrl(query)
-      };
-    });
-
-    return res.status(200).json({
-      text: clamp(parsed?.text || "Aqui estão 3 opções para você comparar.", 220),
-      recommendations: normalized
-    });
+    return res.status(200).json(normalizeResponse(parsed, message));
   } catch (err) {
-    // BLINDAGEM: qualquer erro do Gemini vira fallback 200 (sem “Falha no /api/chat”)
-    console.error("Gemini error:", err);
-    return res.status(200).json(fallback(message));
+    console.error("ERROR /api/chat:", err);
+    return res.status(200).json(normalizeResponse(null, message));
   }
 });
 
-// Static (Vite build)
+/**
+ * Servir o frontend já existente (SEM MEXER NO LAYOUT).
+ */
 const distPath = path.join(__dirname, "..", "web", "dist");
 app.use(express.static(distPath));
 app.get("*", (req, res) => res.sendFile(path.join(distPath, "index.html")));
