@@ -1,34 +1,31 @@
-# =========================
-# 1) BUILD FRONTEND
-# =========================
-FROM node:20-alpine AS frontend
-
+# ---------- build web ----------
+FROM node:20-alpine AS webbuild
 WORKDIR /app
 
+# Root deps (server deps)
+COPY package.json ./
+RUN npm install --omit=dev
+
+# Web deps + build
 COPY web/package.json web/package-lock.json* ./web/
 RUN cd web && npm install
 
 COPY web ./web
 RUN cd web && npm run build
 
-# =========================
-# 2) BUILD BACKEND
-# =========================
+# ---------- runtime ----------
 FROM node:20-alpine
-
 WORKDIR /app
-
-COPY package.json package-lock.json* ./
-RUN npm install --production
-
-COPY server ./server
-
-# COPIA O BUILD DO FRONTEND
-COPY --from=frontend /app/web/dist ./server/dist
-
 ENV NODE_ENV=production
 ENV PORT=8080
 
-EXPOSE 8080
+# Server deps
+COPY package.json ./
+RUN npm install --omit=dev
 
+# App code
+COPY server ./server
+COPY --from=webbuild /app/web/dist ./web/dist
+
+EXPOSE 8080
 CMD ["node", "server/index.js"]
