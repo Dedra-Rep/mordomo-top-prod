@@ -14,104 +14,67 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [affiliateIds, setAffiliateIds] = useState<AffiliateIDs>({});
-
-  const [paidPlans, setPaidPlans] = useState<Set<UserRole>>(
-    new Set([UserRole.CUSTOMER])
-  );
+  const [paidPlans, setPaidPlans] = useState<Set<UserRole>>(new Set([UserRole.CUSTOMER]));
   const [pendingPlan, setPendingPlan] = useState<UserRole | null>(null);
+
+  // 🧠 CONTADOR DE BUSCAS (CTA inteligente)
+  const [searchCount, setSearchCount] = useState(0);
 
   const synthRef = useRef<SpeechSynthesis | null>(
     typeof window !== "undefined" ? window.speechSynthesis : null
   );
 
-  /* =========================
-     FALA / MASCOTE
-  ========================== */
-
   const stopSpeaking = useCallback(() => {
-    if (synthRef.current) {
-      synthRef.current.cancel();
-      setMascotState(MascotState.IDLE);
-    }
+    synthRef.current?.cancel();
+    setMascotState(MascotState.IDLE);
   }, []);
 
   const speak = useCallback(
-    (text?: string) => {
+    (text: string) => {
       stopSpeaking();
       if (isMuted || !text) return;
       if (typeof window === "undefined") return;
 
       setMascotState(MascotState.SPEAKING);
-      const utterance = new SpeechSynthesisUtterance(String(text));
+      const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = "pt-BR";
-      utterance.rate = 1.0;
       utterance.onend = () => setMascotState(MascotState.IDLE);
-      utterance.onerror = () => setMascotState(MascotState.IDLE);
-
       synthRef.current?.speak(utterance);
     },
     [isMuted, stopSpeaking]
   );
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const isMobile = window.innerWidth < 768;
     const greeting =
       role === UserRole.CUSTOMER
-        ? isMobile
-          ? BUTLER_PHRASES.INITIAL_MOBILE
-          : BUTLER_PHRASES.INITIAL_DESKTOP
+        ? BUTLER_PHRASES.INITIAL_DESKTOP
         : role === UserRole.AFFILIATE_PRO
         ? BUTLER_PHRASES.PRO_WELCOME
         : BUTLER_PHRASES.EXEC_WELCOME;
 
     const timer = setTimeout(() => speak(greeting), 800);
-    return () => {
-      clearTimeout(timer);
-      stopSpeaking();
-    };
-  }, [role, speak, stopSpeaking]);
-
-  /* =========================
-     TROCA DE PLANO
-  ========================== */
+    return () => clearTimeout(timer);
+  }, [role, speak]);
 
   const handleRoleChange = (newRole: UserRole) => {
-    stopSpeaking();
-    setLastResponse(null);
-
     if (paidPlans.has(newRole)) {
       setRole(newRole);
     } else {
       setPendingPlan(newRole);
-      speak(
-        `Excelente escolha. O plano ${
-          newRole === UserRole.AFFILIATE_PRO ? "Profissional" : "Executivo"
-        } vai mudar o seu jogo. Vamos confirmar sua adesão?`
-      );
+      speak("Excelente escolha. Vamos confirmar sua adesão?");
     }
   };
 
   const confirmSubscription = () => {
-    if (!pendingPlan) return;
-
-    setPaidPlans((prev) => new Set([...Array.from(prev), pendingPlan]));
-    setRole(pendingPlan);
-    setPendingPlan(null);
-
-    speak(
-      "Assinatura confirmada com sucesso. Suas novas ferramentas já estão liberadas."
-    );
+    if (pendingPlan) {
+      setPaidPlans((prev) => new Set(prev).add(pendingPlan));
+      setRole(pendingPlan);
+      setPendingPlan(null);
+      speak("Assinatura confirmada. Bem-vindo ao Mordomo.Pro.");
+    }
   };
 
-  /* =========================
-     ENVIO DE MENSAGEM
-  ========================== */
-
   const handleSend = async (msg: string) => {
-    if (isLoading) return;
-
     stopSpeaking();
     setIsLoading(true);
     setMascotState(MascotState.THINKING);
@@ -119,104 +82,46 @@ const App: React.FC = () => {
     try {
       const response = await processUserRequest(msg, role, affiliateIds);
       setLastResponse(response);
-      setMascotState(MascotState.IDLE);
-      speak(String((response as any)?.speech || ""));
+      setSearchCount((c) => c + 1); // 👈 incrementa buscas
+      speak(response.speech);
     } catch (err: any) {
-      console.error(err);
-      setLastResponse({
-        speech:
-          err?.message ||
-          "Falha ao consultar o serviço. Tente novamente em instantes.",
-        items: [],
-        results: [],
-      } as any);
-      setMascotState(MascotState.IDLE);
+      setLastResponse({ speech: err?.message || "Erro ao processar." } as any);
     } finally {
       setIsLoading(false);
+      setMascotState(MascotState.IDLE);
     }
   };
 
-  const currentBrand = role === UserRole.CUSTOMER ? "MORDOMO.AI" : "MORDOMO.TOP";
-
-  /* =========================
-     RENDER
-  ========================== */
-
   return (
-    <div
-      className={`min-h-screen ${COLORS[role].primary} text-slate-100 transition-colors duration-700 flex flex-col`}
-    >
-      {/* HEADER */}
-      <header className="p-4 border-b border-white/5 flex justify-between items-center z-40 bg-black/40 backdrop-blur-md">
-        <div className="flex items-center gap-2">
-          <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center">
-            <span className="text-slate-900 font-black text-xl italic">M</span>
-          </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tighter uppercase">
-              {currentBrand}
-            </h1>
-            <span className="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-              {role === UserRole.AFFILIATE_EXEC
-                ? "Mentor Executivo"
-                : "Assistente Inteligente"}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className="hidden md:flex bg-white/5 rounded-full p-1 border border-white/10">
-            <button
-              onClick={() => handleRoleChange(UserRole.CUSTOMER)}
-              className={`px-5 py-2 rounded-full text-xs font-black uppercase ${
-                role === UserRole.CUSTOMER
-                  ? "bg-sky-600 text-white"
-                  : "text-slate-400"
-              }`}
-            >
-              Grátis
-            </button>
-
-            <button
-              onClick={() => handleRoleChange(UserRole.AFFILIATE_PRO)}
-              className={`px-5 py-2 rounded-full text-xs font-black uppercase ${
-                role === UserRole.AFFILIATE_PRO
-                  ? "bg-blue-600 text-white"
-                  : "text-slate-400"
-              }`}
-            >
-              Profissional
-            </button>
-
-            <button
-              onClick={() => handleRoleChange(UserRole.AFFILIATE_EXEC)}
-              className={`px-5 py-2 rounded-full text-xs font-black uppercase ${
-                role === UserRole.AFFILIATE_EXEC
-                  ? "bg-purple-600 text-white"
-                  : "text-slate-400"
-              }`}
-            >
-              Executivo
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 px-3 py-1 bg-green-900/20 rounded-full border border-green-500/30">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span className="text-[10px] font-bold text-green-500 uppercase">
-              Ativo
-            </span>
-          </div>
-        </div>
-      </header>
-
-      {/* MAIN — ROLA NORMALMENTE */}
-      <main className="flex-1 relative pb-32 overflow-y-auto">
+    <div className={`min-h-screen ${COLORS[role].primary} text-slate-100 flex flex-col`}>
+      <main className="flex-1 relative pb-32 overflow-x-hidden">
         <ChatInterface
           role={role}
           onSend={handleSend}
           lastResponse={lastResponse}
           isLoading={isLoading}
         />
+
+        {/* 🔵 CTA PRO CONTEXTUAL */}
+        {role === UserRole.CUSTOMER && searchCount >= 1 && (
+          <div className="max-w-3xl mx-auto px-6 mt-10 text-center">
+            <p className="text-slate-300 text-sm">
+              Quer transformar isso em renda?
+            </p>
+            <p className="mt-2 text-slate-400 text-xs">
+              No <strong>Mordomo.Pro</strong>, você usa essa mesma inteligência para
+              ganhar dinheiro como afiliado em vários marketplaces.
+            </p>
+
+            <button
+              onClick={() => handleRoleChange(UserRole.AFFILIATE_PRO)}
+              className="mt-4 px-8 py-3 rounded-xl font-black uppercase tracking-widest text-sm transition hover:opacity-90"
+              style={{ backgroundColor: "#f59e0b", color: "#0b1220" }}
+            >
+              Ativar Mordomo.Pro
+            </button>
+          </div>
+        )}
 
         <ButlerMascot
           state={mascotState}
@@ -233,7 +138,7 @@ const App: React.FC = () => {
             ids={affiliateIds}
             onSave={(ids) => {
               setAffiliateIds(ids);
-              handleSend("Configurei meus IDs. Vamos começar.");
+              handleSend("Configurei meus IDs.");
             }}
           />
         )}
