@@ -1,11 +1,49 @@
-import React, { useState } from "react";
-import type { AIResponse, UserRole } from "./types";
+import React, { useEffect, useMemo, useState } from "react";
+import type { AIResponse, Plan, UserRole } from "./types";
 import { ChatInterface } from "./components/ChatInterface";
+import { AffiliatePanel } from "./components/AffiliatePanel";
+import { PaywallModal } from "./components/PaywallModal";
+import { PlanBar } from "./components/PlanBar";
+import { getSubscriber, setPlan, updateProfile } from "./services/subscription";
 
 export default function App() {
-  const [role, setRole] = useState<UserRole>("MORDOMO");
   const [lastResponse, setLastResponse] = useState<AIResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  const [subscriber, setSubscriberState] = useState(() => getSubscriber());
+  const [paywallOpen, setPaywallOpen] = useState(false);
+  const [requested, setRequested] = useState<"PRO" | "EXEC">("PRO");
+
+  // role (opcional): você pode derivar do plano
+  const role: UserRole = useMemo(() => {
+    if (subscriber.plan === "EXEC") return "PRO";
+    if (subscriber.plan === "PRO") return "AFILIADO";
+    return "MORDOMO";
+  }, [subscriber.plan]);
+
+  useEffect(() => {
+    const sync = () => setSubscriberState(getSubscriber());
+    window.addEventListener("storage", sync);
+    return () => window.removeEventListener("storage", sync);
+  }, []);
+
+  const changePlan = (p: Plan) => {
+    if (p === "FREE") {
+      setPlan("FREE");
+      setSubscriberState(getSubscriber());
+      return;
+    }
+
+    // PRO/EXEC exigem paywall (MVP)
+    setRequested(p);
+    setPaywallOpen(true);
+  };
+
+  const onUnlocked = (name: string, email: string, plan: Plan) => {
+    updateProfile({ name, email });
+    setPlan(plan);
+    setSubscriberState(getSubscriber());
+  };
 
   const onSend = async (msg: string) => {
     setIsLoading(true);
@@ -13,29 +51,21 @@ export default function App() {
       const r = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: msg, role })
+        body: JSON.stringify({ message: msg, role }),
       });
 
       const data = await r.json().catch(() => ({}));
-
-      // Mesmo que o backend responda 200 sempre, isso fica robusto.
       if (!r.ok) {
-        setLastResponse({
-          text: data?.error ? String(data.error) : `Erro HTTP ${r.status} no /api/chat`,
-          recommendations: []
-        });
+        setLastResponse({ text: data?.error ? String(data.error) : `Erro HTTP ${r.status} no /api/chat`, recommendations: [] });
         return;
       }
 
       setLastResponse({
         text: String(data?.text || ""),
-        recommendations: Array.isArray(data?.recommendations) ? data.recommendations : []
+        recommendations: Array.isArray(data?.recommendations) ? data.recommendations : [],
       });
-    } catch (e: any) {
-      setLastResponse({
-        text: "Falha de rede. Verifique se o serviço do Cloud Run está público e se não há bloqueio de CORS.",
-        recommendations: []
-      });
+    } catch {
+      setLastResponse({ text: "Falha de rede. Tente atualizar a página (Ctrl+F5).", recommendations: [] });
     } finally {
       setIsLoading(false);
     }
@@ -43,26 +73,32 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh" }}>
-      <ChatInterface role={role} onSend={onSend} lastResponse={lastResponse} isLoading={isLoading} />
-
-      <div style={{ position: "fixed", right: 18, top: 18, display: "flex", gap: 8 }}>
-        <select
-          value={role}
-          onChange={(e) => setRole(e.target.value as UserRole)}
-          style={{
-            background: "rgba(255,255,255,0.06)",
-            border: "1px solid rgba(255,255,255,0.12)",
-            color: "#fff",
-            padding: "8px 10px",
-            borderRadius: 10,
-            outline: "none"
-          }}
-        >
-          <option value="MORDOMO">Mordomo</option>
-          <option value="AFILIADO">Afiliado</option>
-          <option value="PRO">Pro</option>
-        </select>
+      {/* topo: planos */}
+      <div style={{ position: "fixed", top: 14, left: 14, right: 14, zIndex: 60, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ color: "#fff", fontWeight: 900, fontSize: 12, opacity: 0.8 }}>MORDOMO.AI</div>
+          <PlanBar plan={subscriber.plan} onChange={changePlan} />
+        </div>
+        <div style={{ color: "rgba(255,255,255,0.75)", fontSize: 12 }}>
+          Status: <b style={{ color: "#34d399" }}>LIVE</b>
+        </div>
       </div>
+
+      <div style={{ paddingTop: 60 }}>
+        <ChatInterface role={role} onSend={onSend} lastResponse={lastResponse} isLoading={isLoading} />
+
+        {/* painel de IDs */}
+        <div style={{ maxWidth: 1050, margin: "0 auto", padding: "0 22px 30px" }}>
+          <AffiliatePanel plan={subscriber.plan} ids={subscriber.ids} />
+        </div>
+      </div>
+
+      <PaywallModal
+        open={paywallOpen}
+        requestedPlan={requested}
+        onClose={() => setPaywallOpen(false)}
+        onUnlocked={onUnlocked}
+      />
     </div>
   );
 }
