@@ -1,7 +1,8 @@
-// server/index.js
+// server/index.js (ESM safe)
 import express from "express";
 import path from "path";
 import fs from "fs";
+import { fileURLToPath } from "url";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -10,18 +11,14 @@ app.use(express.json({ limit: "1mb" }));
 app.get("/healthz", (_, res) => res.status(200).send("ok"));
 
 // ===============================
-// 1) API (mantenha suas rotas aqui)
-// ===============================
-// Se você já tem /api/chat aqui, mantenha como está.
-// (Não estou alterando a lógica do chat para não quebrar nada.)
-
-// ===============================
-// 2) FRONTEND (Vite / React)
+// FRONTEND (Vite / React)
 // ===============================
 
-// Resolve possíveis saídas do Vite:
-// - dist/ (na raiz do projeto)
-// - web/dist/ (dentro da pasta web)
+// ESM-safe __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// candidatos para pasta do Vite (seja qual for o build)
 const candidates = [
   path.join(process.cwd(), "dist"),
   path.join(process.cwd(), "web", "dist"),
@@ -34,21 +31,20 @@ const distPath = candidates.find((p) => fs.existsSync(p)) || null;
 if (distPath) {
   app.use(express.static(distPath));
 
-  // SPA fallback — ESSENCIAL para não dar 404 em refresh/rotas
+  // SPA fallback
   app.get("*", (req, res) => {
     res.sendFile(path.join(distPath, "index.html"));
   });
 } else {
-  // Se não existir dist, mostre um erro claro (melhor que 404 confuso)
   app.get("*", (_, res) => {
     res
       .status(500)
-      .send("Build do frontend não encontrado. Pasta dist/web/dist não existe.");
+      .send("Build do frontend não encontrado. Gere o Vite build (dist/web/dist).");
   });
 }
 
-// Cloud Run: obrigatoriamente ouvir em PORT
-const PORT = process.env.PORT || 8080;
+// Cloud Run precisa ouvir na porta PORT (8080)
+const PORT = Number(process.env.PORT || 8080);
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Mordomo rodando na porta ${PORT}`);
 });
