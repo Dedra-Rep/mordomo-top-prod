@@ -1,6 +1,10 @@
 import React, { useMemo, useState } from "react";
 import type { AIResponse, UserRole } from "../types";
-import { buildAmazonSearchUrl, buildPlaceholderImage, AMAZON_DEFAULT_TAG } from "../services/amazonLinks";
+import {
+  buildAmazonSearchUrl,
+  buildPlaceholderImage,
+  AMAZON_DEFAULT_TAG,
+} from "../services/amazonLinks";
 
 type Props = {
   role: UserRole;
@@ -26,9 +30,9 @@ function badgeClass(rotulo?: string) {
 }
 
 /**
- * Suporta os dois formatos:
+ * Suporta dois formatos:
  * - novo (AI Studio): lastResponse.items[]
- * - legado (se existir): lastResponse.results[]
+ * - legado: lastResponse.results[]
  */
 function safeItems(lastResponse: AIResponse | null): any[] {
   const r1 = (lastResponse as any)?.items;
@@ -49,17 +53,20 @@ function normalizeItem(raw: any) {
   const priceHint = raw?.priceHint ?? raw?.observacoes ?? null;
   const imageUrl = String(raw?.imageUrl ?? raw?.image_url ?? "").trim();
 
-  // Não confiamos em link vindo da IA/response.
-  // Sempre geramos um link estável via query/title:
+  // Não confiar em link vindo da resposta: sempre gerar link estável.
   const linkQuery = query || title;
   const link = buildAmazonSearchUrl(linkQuery, AMAZON_DEFAULT_TAG);
-
   const image = imageUrl || buildPlaceholderImage(title || "Recomendação");
 
   return { title, query, why, rotulo, priceHint, link, image };
 }
 
-export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isLoading }) => {
+export const ChatInterface: React.FC<Props> = ({
+  role,
+  onSend,
+  lastResponse,
+  isLoading,
+}) => {
   const [msg, setMsg] = useState("");
 
   const subtitle = useMemo(() => {
@@ -76,7 +83,9 @@ export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isL
   const items = safeItems(lastResponse).slice(0, 4).map(normalizeItem);
 
   return (
-    <div className="absolute inset-0">
+    // ✅ Permite rolagem do conteúdo (mouse/scrollbar)
+    <div className="min-h-screen overflow-y-auto">
+      {/* Conteúdo principal */}
       <div className="max-w-5xl mx-auto px-6 pt-16 md:pt-20 pb-44">
         <h2 className="text-center text-4xl md:text-6xl font-black tracking-tight">
           À sua total disposição.
@@ -86,6 +95,7 @@ export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isL
           {subtitle}
         </p>
 
+        {/* Badges */}
         <div className="mt-8 flex justify-center gap-3">
           <span className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-xs font-bold uppercase tracking-wider">
             ⚡ Velocidade Máxima
@@ -95,7 +105,8 @@ export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isL
           </span>
         </div>
 
-        {lastResponse?.speech && (
+        {/* Speech curto */}
+        {(lastResponse as any)?.speech && (
           <div className="mt-10 mx-auto max-w-3xl">
             <div className="bg-black/25 border border-white/10 rounded-2xl p-4 text-slate-200">
               <div className="text-xs uppercase tracking-widest text-slate-400 mb-2">
@@ -106,6 +117,7 @@ export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isL
           </div>
         )}
 
+        {/* CARDS */}
         {items.length > 0 && (
           <div className="mt-8 mx-auto max-w-5xl">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -126,10 +138,11 @@ export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isL
                         {rotulo}
                       </span>
 
+                      {/* ícone decorativo */}
                       <div className="opacity-25 text-2xl font-black select-none">a</div>
                     </div>
 
-                    {/* IMAGEM (real se existir, senão placeholder) */}
+                    {/* Imagem (real se existir, senão placeholder) */}
                     <div className="mt-4">
                       <img
                         src={item.image}
@@ -158,7 +171,7 @@ export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isL
                     </div>
 
                     <div className="mt-4">
-                      {/* Link SEMPRE VÁLIDO (gerado pelo sistema) */}
+                      {/* Link SEMPRE válido */}
                       <a
                         href={item.link}
                         target="_blank"
@@ -181,7 +194,8 @@ export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isL
         )}
       </div>
 
-      <div className="absolute left-0 right-0 bottom-0 pb-6">
+      {/* ✅ INPUT FIXO (não trava scroll) */}
+      <div className="fixed left-0 right-0 bottom-0 pb-6">
         <div className="max-w-5xl mx-auto px-6">
           <div className="bg-black/35 border border-white/10 rounded-full flex items-center gap-3 px-5 py-3 backdrop-blur-md">
             <input
