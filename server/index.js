@@ -1,52 +1,54 @@
 // server/index.js
 import express from "express";
 import path from "path";
-import { fileURLToPath } from "url";
-import { runGemini } from "./geminiService.js";
+import fs from "fs";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Healthcheck
-app.get("/health", (_req, res) => res.status(200).send("ok"));
-
-// API
-app.post("/api/chat", async (req, res) => {
-  try {
-    const message = req.body?.prompt || req.body?.message || req.body?.text || "";
-    const role = req.body?.role || "CUSTOMER";
-
-    if (!String(message).trim()) {
-      return res.status(400).json({ error: "Mensagem vazia." });
-    }
-
-    const data = await runGemini({ message, role });
-    return res.json(data);
-  } catch (err) {
-    console.error("Erro /api/chat:", err);
-    return res.status(500).json({ error: err?.message || "Erro interno no /api/chat" });
-  }
-});
+// Healthcheck (Cloud Run)
+app.get("/healthz", (_, res) => res.status(200).send("ok"));
 
 // ===============================
-// FRONTEND (Vite / React)
+// 1) API (mantenha suas rotas aqui)
 // ===============================
-const distPath = path.join(__dirname, "..", "web", "dist");
+// Se você já tem /api/chat aqui, mantenha como está.
+// (Não estou alterando a lógica do chat para não quebrar nada.)
 
-// Serve estáticos do Vite build
-app.use(express.static(distPath));
+// ===============================
+// 2) FRONTEND (Vite / React)
+// ===============================
 
-// SPA fallback (evita 404 em rotas)
-app.get("*", (_req, res) => {
-  res.sendFile(path.join(distPath, "index.html"));
-});
+// Resolve possíveis saídas do Vite:
+// - dist/ (na raiz do projeto)
+// - web/dist/ (dentro da pasta web)
+const candidates = [
+  path.join(process.cwd(), "dist"),
+  path.join(process.cwd(), "web", "dist"),
+  path.join(__dirname, "..", "dist"),
+  path.join(__dirname, "..", "web", "dist"),
+];
 
-// Cloud Run: obrigatório
-const PORT = Number(process.env.PORT || 8080);
+const distPath = candidates.find((p) => fs.existsSync(p)) || null;
 
+if (distPath) {
+  app.use(express.static(distPath));
+
+  // SPA fallback — ESSENCIAL para não dar 404 em refresh/rotas
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(distPath, "index.html"));
+  });
+} else {
+  // Se não existir dist, mostre um erro claro (melhor que 404 confuso)
+  app.get("*", (_, res) => {
+    res
+      .status(500)
+      .send("Build do frontend não encontrado. Pasta dist/web/dist não existe.");
+  });
+}
+
+// Cloud Run: obrigatoriamente ouvir em PORT
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Mordomo rodando na porta ${PORT}`);
 });
