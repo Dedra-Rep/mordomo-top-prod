@@ -31,7 +31,7 @@ function badgeClass(rotulo?: string) {
 
 /**
  * Suporta dois formatos:
- * - novo (AI Studio): lastResponse.items[]
+ * - novo: lastResponse.items[]
  * - legado: lastResponse.results[]
  */
 function safeItems(lastResponse: AIResponse | null): any[] {
@@ -45,7 +45,6 @@ function safeItems(lastResponse: AIResponse | null): any[] {
 }
 
 function normalizeItem(raw: any) {
-  // Novo formato (AI Studio)
   const title = String(raw?.title ?? raw?.nome ?? "").trim();
   const query = String(raw?.query ?? "").trim();
   const why = String(raw?.why ?? raw?.porque ?? "").trim();
@@ -53,8 +52,7 @@ function normalizeItem(raw: any) {
   const priceHint = raw?.priceHint ?? raw?.observacoes ?? null;
   const imageUrl = String(raw?.imageUrl ?? raw?.image_url ?? "").trim();
 
-  // Não confiar em link vindo da resposta: sempre gerar link estável.
-  const linkQuery = query || title;
+  const linkQuery = query || title || "produto amazon";
   const link = buildAmazonSearchUrl(linkQuery, AMAZON_DEFAULT_TAG);
   const image = imageUrl || buildPlaceholderImage(title || "Recomendação");
 
@@ -83,10 +81,9 @@ export const ChatInterface: React.FC<Props> = ({
   const items = safeItems(lastResponse).slice(0, 4).map(normalizeItem);
 
   return (
-    // ✅ Permite rolagem do conteúdo (mouse/scrollbar)
     <div className="min-h-screen overflow-y-auto">
-      {/* Conteúdo principal */}
-      <div className="max-w-5xl mx-auto px-6 pt-16 md:pt-20 pb-44">
+      {/* CONTEÚDO */}
+      <div className="max-w-5xl mx-auto px-6 pt-16 md:pt-20 pb-48">
         <h2 className="text-center text-4xl md:text-6xl font-black tracking-tight">
           À sua total disposição.
         </h2>
@@ -95,7 +92,7 @@ export const ChatInterface: React.FC<Props> = ({
           {subtitle}
         </p>
 
-        {/* Badges */}
+        {/* BADGES */}
         <div className="mt-8 flex justify-center gap-3">
           <span className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-xs font-bold uppercase tracking-wider">
             ⚡ Velocidade Máxima
@@ -105,21 +102,23 @@ export const ChatInterface: React.FC<Props> = ({
           </span>
         </div>
 
-        {/* Speech curto */}
+        {/* FALA DO MORDOMO */}
         {(lastResponse as any)?.speech && (
           <div className="mt-10 mx-auto max-w-3xl">
             <div className="bg-black/25 border border-white/10 rounded-2xl p-4 text-slate-200">
               <div className="text-xs uppercase tracking-widest text-slate-400 mb-2">
                 Mordomo
               </div>
-              <div className="text-sm md:text-base">{(lastResponse as any).speech}</div>
+              <div className="text-sm md:text-base">
+                {(lastResponse as any).speech}
+              </div>
             </div>
           </div>
         )}
 
         {/* CARDS */}
         {items.length > 0 && (
-          <div className="mt-8 mx-auto max-w-5xl">
+          <div className="mt-10 mx-auto max-w-5xl">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {items.map((item, idx) => {
                 const rotulo = badgeLabel(item.rotulo);
@@ -137,12 +136,9 @@ export const ChatInterface: React.FC<Props> = ({
                       >
                         {rotulo}
                       </span>
-
-                      {/* ícone decorativo */}
                       <div className="opacity-25 text-2xl font-black select-none">a</div>
                     </div>
 
-                    {/* Imagem (real se existir, senão placeholder) */}
                     <div className="mt-4">
                       <img
                         src={item.image}
@@ -171,7 +167,6 @@ export const ChatInterface: React.FC<Props> = ({
                     </div>
 
                     <div className="mt-4">
-                      {/* Link SEMPRE válido */}
                       <a
                         href={item.link}
                         target="_blank"
@@ -181,20 +176,33 @@ export const ChatInterface: React.FC<Props> = ({
                       >
                         Comprar agora
                       </a>
-
-                      <div className="mt-2 text-[11px] text-slate-500">
-                        Abrirá uma busca na Amazon Brasil com curadoria do Mordomo.
-                      </div>
                     </div>
                   </div>
                 );
               })}
             </div>
+
+            {/* 🔵 COPY EDUCATIVA – PLANO GRÁTIS */}
+            <div className="mt-10 text-center max-w-3xl mx-auto">
+              <p className="text-sm text-slate-300">
+                Essas recomendações foram encontradas na Amazon com o melhor custo-benefício disponível hoje.
+              </p>
+
+              <p className="mt-3 text-xs text-slate-400">
+                No Plano Profissional, o Mordomo compara vários marketplaces e passa a trabalhar com seus próprios links de afiliado.
+              </p>
+
+              <p className="mt-4 text-sm font-semibold text-amber-300">
+                No Mordomo.Pro, você deixa de apenas comprar e passa a ganhar dinheiro como afiliado em diversos marketplaces no mundo.
+                <br />
+                Você já viu como funciona. Agora, é hora de virar o jogo.
+              </p>
+            </div>
           </div>
         )}
       </div>
 
-      {/* ✅ INPUT FIXO (não trava scroll) */}
+      {/* INPUT FIXO */}
       <div className="fixed left-0 right-0 bottom-0 pb-6">
         <div className="max-w-5xl mx-auto px-6">
           <div className="bg-black/35 border border-white/10 rounded-full flex items-center gap-3 px-5 py-3 backdrop-blur-md">
@@ -216,7 +224,6 @@ export const ChatInterface: React.FC<Props> = ({
               }`}
               style={{ backgroundColor: "#f59e0b", color: "#0b1220" }}
               aria-label="Enviar"
-              title="Enviar"
             >
               ➤
             </button>
