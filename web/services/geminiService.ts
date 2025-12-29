@@ -2,17 +2,18 @@
 import type { AIResponse, AffiliateIDs, UserRole } from "../types";
 
 type ApiPayload = {
-  // backend pode exigir "prompt"
   prompt: string;
-  // seu app já usa "message"
   message: string;
-  // alguns backends usam "text" também
   text: string;
-
   role: UserRole;
   affiliateIds?: AffiliateIDs;
 };
 
+/**
+ * Normaliza QUALQUER resposta do backend para o contrato ÚNICO do frontend.
+ * 🔒 Nunca retorna links
+ * 🔒 Sempre retorna items[]
+ */
 function normalizeToAIResponse(data: any): AIResponse {
   const speech =
     data?.speech ??
@@ -21,25 +22,27 @@ function normalizeToAIResponse(data: any): AIResponse {
     data?.message ??
     "";
 
-  const raw =
+  // Aceita múltiplos formatos, converte para items[]
+  const rawItems =
+    (Array.isArray(data?.items) && data.items) ||
     (Array.isArray(data?.results) && data.results) ||
     (Array.isArray(data?.cards) && data.cards) ||
-    (Array.isArray(data?.items) && data.items) ||
     (Array.isArray(data?.products) && data.products) ||
     [];
 
-  const results = raw.map((x: any) => ({
+  const items = rawItems.map((x: any, idx: number) => ({
+    rank: x?.rank ?? idx + 1,
     rotulo: x?.rotulo ?? x?.badge ?? x?.label ?? "OPÇÃO",
-    nome: x?.nome ?? x?.title ?? x?.name ?? "Recomendação",
-    porque: x?.porque ?? x?.reason ?? x?.why ?? "",
-    observacoes: x?.observacoes ?? x?.notes ?? x?.obs ?? "",
-    link_afiliado: x?.link_afiliado ?? x?.url ?? x?.link ?? "",
+    title: x?.title ?? x?.nome ?? x?.name ?? "Recomendação",
+    query: x?.query ?? x?.search ?? x?.termo ?? x?.title ?? "",
+    why: x?.why ?? x?.porque ?? x?.reason ?? "",
+    priceHint: x?.priceHint ?? x?.observacoes ?? null,
   }));
 
   return {
-    ...data,
     speech,
-    results,
+    items,
+    emotion: data?.emotion ?? "neutral",
   } as AIResponse;
 }
 
@@ -48,7 +51,6 @@ export async function processUserRequest(
   role: UserRole,
   affiliateIds: AffiliateIDs
 ): Promise<AIResponse> {
-  // Envia "prompt", "message" e "text" para compatibilidade total com o backend
   const payload: ApiPayload = {
     prompt: message,
     message,
@@ -64,17 +66,22 @@ export async function processUserRequest(
   });
 
   let data: any = null;
+
   try {
     data = await res.json();
   } catch {
     const text = await res.text().catch(() => "");
-    if (!res.ok) throw new Error(text || `Erro HTTP ${res.status} em /api/chat`);
+    if (!res.ok) {
+      throw new Error(text || `Erro HTTP ${res.status} em /api/chat`);
+    }
     data = { speech: text };
   }
 
   if (!res.ok) {
     const msg =
-      data?.error || data?.message || `Erro HTTP ${res.status} em /api/chat`;
+      data?.error ||
+      data?.message ||
+      `Erro HTTP ${res.status} em /api/chat`;
     throw new Error(msg);
   }
 
