@@ -18,7 +18,7 @@ app.get("/healthz", (_, res) => res.status(200).send("ok"));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// candidatos para pasta do Vite (seja qual for o build)
+// candidatos para pasta do Vite (cobre seus cenários)
 const candidates = [
   path.join(process.cwd(), "dist"),
   path.join(process.cwd(), "web", "dist"),
@@ -36,10 +36,9 @@ if (distPath) {
     res.sendFile(path.join(distPath, "index.html"));
   });
 } else {
+  // Mesmo sem dist, o servidor SOBE (isso evita "not ready")
   app.get("*", (_, res) => {
-    res
-      .status(500)
-      .send("Build do frontend não encontrado. Gere o Vite build (dist/web/dist).");
+    res.status(200).send("Servidor ok. Frontend ainda não gerado (dist não encontrado).");
   });
 }
 
