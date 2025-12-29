@@ -10,8 +10,8 @@ app.use(express.json({ limit: "1mb" }));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Healthcheck (Cloud Run gosta disso)
-app.get("/health", (_, res) => res.status(200).send("ok"));
+// Healthcheck
+app.get("/health", (_req, res) => res.status(200).send("ok"));
 
 // API
 app.post("/api/chat", async (req, res) => {
@@ -36,18 +36,17 @@ app.post("/api/chat", async (req, res) => {
 // ===============================
 const distPath = path.join(__dirname, "..", "web", "dist");
 
-// serve estáticos
+// Serve estáticos do Vite build
 app.use(express.static(distPath));
 
-// ✅ SPA fallback: qualquer rota volta pro index.html
-app.get("*", (_, res) => {
+// SPA fallback (evita 404 em rotas)
+app.get("*", (_req, res) => {
   res.sendFile(path.join(distPath, "index.html"));
 });
 
-// ✅ Cloud Run: obrigatoriamente process.env.PORT
+// Cloud Run: obrigatório
 const PORT = Number(process.env.PORT || 8080);
 
-// ✅ bind 0.0.0.0
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Mordomo rodando na porta ${PORT}`);
 });
