@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import type { AIResponse, UserRole } from "../types";
+import { buildAmazonSearchUrl, buildPlaceholderImage, AMAZON_DEFAULT_TAG } from "../services/amazonLinks";
 
 type Props = {
   role: UserRole;
@@ -24,9 +25,38 @@ function badgeClass(rotulo?: string) {
   return "bg-white/5 text-slate-300 border-white/10";
 }
 
-function safeResults(lastResponse: AIResponse | null) {
-  const results = (lastResponse as any)?.results;
-  return Array.isArray(results) ? results : [];
+/**
+ * Suporta os dois formatos:
+ * - novo (AI Studio): lastResponse.items[]
+ * - legado (se existir): lastResponse.results[]
+ */
+function safeItems(lastResponse: AIResponse | null): any[] {
+  const r1 = (lastResponse as any)?.items;
+  if (Array.isArray(r1)) return r1;
+
+  const r2 = (lastResponse as any)?.results;
+  if (Array.isArray(r2)) return r2;
+
+  return [];
+}
+
+function normalizeItem(raw: any) {
+  // Novo formato (AI Studio)
+  const title = String(raw?.title ?? raw?.nome ?? "").trim();
+  const query = String(raw?.query ?? "").trim();
+  const why = String(raw?.why ?? raw?.porque ?? "").trim();
+  const rotulo = String(raw?.rotulo ?? "").trim();
+  const priceHint = raw?.priceHint ?? raw?.observacoes ?? null;
+  const imageUrl = String(raw?.imageUrl ?? raw?.image_url ?? "").trim();
+
+  // Não confiamos em link vindo da IA/response.
+  // Sempre geramos um link estável via query/title:
+  const linkQuery = query || title;
+  const link = buildAmazonSearchUrl(linkQuery, AMAZON_DEFAULT_TAG);
+
+  const image = imageUrl || buildPlaceholderImage(title || "Recomendação");
+
+  return { title, query, why, rotulo, priceHint, link, image };
 }
 
 export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isLoading }) => {
@@ -43,11 +73,10 @@ export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isL
     setMsg("");
   };
 
-  const results = safeResults(lastResponse);
+  const items = safeItems(lastResponse).slice(0, 4).map(normalizeItem);
 
   return (
     <div className="absolute inset-0">
-      {/* HERO CENTRAL (mantém o visual do AI Studio) */}
       <div className="max-w-5xl mx-auto px-6 pt-16 md:pt-20 pb-44">
         <h2 className="text-center text-4xl md:text-6xl font-black tracking-tight">
           À sua total disposição.
@@ -57,7 +86,6 @@ export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isL
           {subtitle}
         </p>
 
-        {/* Badges */}
         <div className="mt-8 flex justify-center gap-3">
           <span className="px-4 py-2 rounded-full bg-white/5 border border-white/10 text-xs font-bold uppercase tracking-wider">
             ⚡ Velocidade Máxima
@@ -67,28 +95,22 @@ export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isL
           </span>
         </div>
 
-        {/* Resposta curta (speech) */}
         {lastResponse?.speech && (
           <div className="mt-10 mx-auto max-w-3xl">
             <div className="bg-black/25 border border-white/10 rounded-2xl p-4 text-slate-200">
               <div className="text-xs uppercase tracking-widest text-slate-400 mb-2">
                 Mordomo
               </div>
-              <div className="text-sm md:text-base">{lastResponse.speech}</div>
+              <div className="text-sm md:text-base">{(lastResponse as any).speech}</div>
             </div>
           </div>
         )}
 
-        {/* CARDS estilo AI Studio (results) */}
-        {results.length > 0 && (
+        {items.length > 0 && (
           <div className="mt-8 mx-auto max-w-5xl">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {results.slice(0, 4).map((item: any, idx: number) => {
-                const rotulo = badgeLabel(item?.rotulo);
-                const link = String(item?.link_afiliado || "").trim();
-                const nome = String(item?.nome || "").trim();
-                const porque = String(item?.porque || "").trim();
-                const obs = String(item?.observacoes || "").trim();
+              {items.map((item, idx) => {
+                const rotulo = badgeLabel(item.rotulo);
 
                 return (
                   <div
@@ -104,42 +126,52 @@ export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isL
                         {rotulo}
                       </span>
 
-                      {/* ícone “a” (amazon) apenas decorativo */}
                       <div className="opacity-25 text-2xl font-black select-none">a</div>
                     </div>
 
+                    {/* IMAGEM (real se existir, senão placeholder) */}
+                    <div className="mt-4">
+                      <img
+                        src={item.image}
+                        alt={item.title || "Produto"}
+                        className="w-full h-36 object-cover rounded-xl border border-white/10"
+                        loading="lazy"
+                      />
+                    </div>
+
                     <div className="mt-3">
-                      <div className="text-lg font-black leading-snug">{nome || "Recomendação"}</div>
-                      {porque && (
-                        <div className="mt-2 text-sm text-slate-300/90">{porque}</div>
+                      <div className="text-lg font-black leading-snug">
+                        {item.title || "Recomendação"}
+                      </div>
+
+                      {item.why && (
+                        <div className="mt-2 text-sm text-slate-300/90">
+                          {item.why}
+                        </div>
                       )}
-                      {obs && (
-                        <div className="mt-2 text-xs text-slate-400">{obs}</div>
+
+                      {item.priceHint && (
+                        <div className="mt-2 text-xs text-slate-400">
+                          {String(item.priceHint)}
+                        </div>
                       )}
                     </div>
 
                     <div className="mt-4">
-                      <button
-                        onClick={() => {
-                          if (!link) return;
-                          window.open(link, "_blank", "noopener,noreferrer");
-                        }}
-                        disabled={!link}
-                        className={`w-full py-3 rounded-xl font-black uppercase tracking-widest text-sm transition ${
-                          link
-                            ? "hover:opacity-90"
-                            : "opacity-50 cursor-not-allowed"
-                        }`}
+                      {/* Link SEMPRE VÁLIDO (gerado pelo sistema) */}
+                      <a
+                        href={item.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-3 rounded-xl font-black uppercase tracking-widest text-sm transition hover:opacity-90 inline-flex items-center justify-center"
                         style={{ backgroundColor: "#f59e0b", color: "#0b1220" }}
                       >
                         Comprar agora
-                      </button>
+                      </a>
 
-                      {!link && (
-                        <div className="mt-2 text-[11px] text-slate-500">
-                          Link indisponível nesta resposta.
-                        </div>
-                      )}
+                      <div className="mt-2 text-[11px] text-slate-500">
+                        Abrirá uma busca na Amazon Brasil com curadoria do Mordomo.
+                      </div>
                     </div>
                   </div>
                 );
@@ -149,7 +181,6 @@ export const ChatInterface: React.FC<Props> = ({ role, onSend, lastResponse, isL
         )}
       </div>
 
-      {/* INPUT FIXO EMBAIXO */}
       <div className="absolute left-0 right-0 bottom-0 pb-6">
         <div className="max-w-5xl mx-auto px-6">
           <div className="bg-black/35 border border-white/10 rounded-full flex items-center gap-3 px-5 py-3 backdrop-blur-md">
