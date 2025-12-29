@@ -16,10 +16,12 @@ export default function App() {
         body: JSON.stringify({ message: msg, role })
       });
 
-      const data = await r.json();
+      const data = await r.json().catch(() => ({}));
+
+      // Mesmo que o backend responda 200 sempre, isso fica robusto.
       if (!r.ok) {
         setLastResponse({
-          text: data?.error ? String(data.error) : "Erro ao processar.",
+          text: data?.error ? String(data.error) : `Erro HTTP ${r.status} no /api/chat`,
           recommendations: []
         });
         return;
@@ -31,7 +33,7 @@ export default function App() {
       });
     } catch (e: any) {
       setLastResponse({
-        text: "Falha de rede ou servidor indisponível.",
+        text: "Falha de rede. Verifique se o serviço do Cloud Run está público e se não há bloqueio de CORS.",
         recommendations: []
       });
     } finally {
@@ -42,7 +44,7 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh" }}>
       <ChatInterface role={role} onSend={onSend} lastResponse={lastResponse} isLoading={isLoading} />
-      {/* seletor simples de perfil (diagnóstico/produto) */}
+
       <div style={{ position: "fixed", right: 18, top: 18, display: "flex", gap: 8 }}>
         <select
           value={role}
