@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import type { Card, ChatResponse, PlanId } from "../types";
 import { chatApi } from "../services/geminiService";
 
@@ -18,10 +18,17 @@ function badgeClass(rotulo?: string) {
   return "bg-white/10 border-white/15 text-white/80";
 }
 
+type Mood = "idle" | "listening" | "thinking" | "speaking" | "error";
+
 type Props = {
   plan: PlanId;
-  onMood: (m: "idle" | "listening" | "thinking" | "speaking" | "error") => void;
+  onMood: (m: Mood) => void;
   onSpokenText: (t: string) => void;
+};
+
+type SpeechRecognitionType = typeof window & {
+  webkitSpeechRecognition?: any;
+  SpeechRecognition?: any;
 };
 
 export const ChatInterface: React.FC<Props> = ({ plan, onMood, onSpokenText }) => {
@@ -29,12 +36,83 @@ export const ChatInterface: React.FC<Props> = ({ plan, onMood, onSpokenText }) =
   const [last, setLast] = useState<ChatResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Microfone
+  const [micOn, setMicOn] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
   const subtitle = useMemo(() => {
     return "Busca cirúrgica em segundos. Diga o que você precisa e eu encontro o melhor preço na Amazon Brasil.";
   }, []);
 
-  async function send() {
-    const text = msg.trim();
+  function hasSpeechRecognition(): boolean {
+    const w = window as unknown as SpeechRecognitionType;
+    return Boolean(w.SpeechRecognition || w.webkitSpeechRecognition);
+  }
+
+  function startMic() {
+    if (!hasSpeechRecognition()) {
+      alert("Seu navegador não suporta SpeechRecognition. Use Google Chrome no desktop.");
+      return;
+    }
+
+    const w = window as unknown as SpeechRecognitionType;
+    const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
+
+    const rec = new SR();
+    recognitionRef.current = rec;
+
+    rec.lang = "pt-BR";
+    rec.interimResults = true;
+    rec.continuous = false;
+
+    rec.onstart = () => {
+      setMicOn(true);
+      onMood("listening");
+    };
+
+    rec.onerror = () => {
+      setMicOn(false);
+      onMood("error");
+    };
+
+    rec.onend = () => {
+      setMicOn(false);
+      // se não estiver pensando/falando, volta para idle
+      onMood((prev => (prev === "thinking" || prev === "speaking") ? prev : "idle") as any);
+    };
+
+    rec.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+
+      const t = String(transcript || "").trim();
+      if (t) setMsg(t);
+
+      // quando final, pode enviar automaticamente
+      const isFinal = event.results?.[event.results.length - 1]?.isFinal;
+      if (isFinal && t) {
+        // pequeno delay para UX
+        setTimeout(() => {
+          send(t);
+        }, 150);
+      }
+    };
+
+    rec.start();
+  }
+
+  function stopMic() {
+    try {
+      recognitionRef.current?.stop?.();
+    } catch {}
+    setMicOn(false);
+    onMood("idle");
+  }
+
+  async function send(forceText?: string) {
+    const text = (forceText ?? msg).trim();
     if (!text || loading) return;
 
     setLoading(true);
@@ -48,8 +126,7 @@ export const ChatInterface: React.FC<Props> = ({ plan, onMood, onSpokenText }) =
       if (r.ok) {
         onMood("speaking");
         onSpokenText(r.reply);
-        // volta para idle após curto tempo
-        setTimeout(() => onMood("idle"), 600);
+        setTimeout(() => onMood("idle"), 650);
       } else {
         onMood("error");
         onSpokenText("Tive um problema agora. Tente novamente.");
@@ -67,14 +144,12 @@ export const ChatInterface: React.FC<Props> = ({ plan, onMood, onSpokenText }) =
 
   return (
     <div className="w-full">
-      {/* HERO */}
       <div className="text-center pt-20 pb-10">
         <div className="text-5xl sm:text-6xl font-black tracking-tight text-white">
           O MORDOMO MAIS FAMOSO
         </div>
-        <div className="mt-3 text-white/70 max-w-2xl mx-auto">
-          {subtitle}
-        </div>
+
+        <div className="mt-3 text-white/70 max-w-2xl mx-auto">{subtitle}</div>
 
         <div className="mt-5 flex items-center justify-center gap-2">
           <span className="px-3 py-1 rounded-full text-xs border border-white/10 bg-white/5 text-white/70">
@@ -85,7 +160,6 @@ export const ChatInterface: React.FC<Props> = ({ plan, onMood, onSpokenText }) =
           </span>
         </div>
 
-        {/* Input */}
         <div className="mt-10 max-w-3xl mx-auto px-4">
           <div className="w-full rounded-2xl bg-white/5 border border-white/10 backdrop-blur flex items-center gap-2 px-4 py-3">
             <input
@@ -97,8 +171,25 @@ export const ChatInterface: React.FC<Props> = ({ plan, onMood, onSpokenText }) =
               className="flex-1 bg-transparent outline-none text-white placeholder:text-white/30"
               placeholder="O que você deseja comprar ou aprender agora?"
             />
+
+            {/* Microfone */}
             <button
-              onClick={send}
+              onClick={() => (micOn ? stopMic() : startMic())}
+              className={[
+                "w-11 h-11 rounded-full border flex items-center justify-center",
+                micOn
+                  ? "bg-blue-500/20 border-blue-400/30 text-blue-200"
+                  : "bg-white/5 border-white/10 text-white/70 hover:bg-white/10"
+              ].join(" ")}
+              aria-label="Microfone"
+              title={micOn ? "Parar microfone" : "Falar no microfone"}
+            >
+              🎤
+            </button>
+
+            {/* Enviar */}
+            <button
+              onClick={() => send()}
               className="w-11 h-11 rounded-full bg-yellow-500/90 hover:bg-yellow-500 text-black font-black flex items-center justify-center"
               aria-label="Enviar"
               title="Enviar"
@@ -107,23 +198,18 @@ export const ChatInterface: React.FC<Props> = ({ plan, onMood, onSpokenText }) =
             </button>
           </div>
 
-          {/* Resultado */}
           <div className="mt-6 text-left">
             <div className="text-white/60 text-xs mb-2">Resultado</div>
             <div className="rounded-2xl bg-white/5 border border-white/10 p-4">
               {!last && !loading && (
                 <div className="text-white/70">Digite um produto para começar</div>
               )}
-              {loading && (
-                <div className="text-white/70">Pensando…</div>
-              )}
+              {loading && <div className="text-white/70">Pensando…</div>}
               {last && (
                 <>
                   <div className="text-white font-semibold">{last.reply}</div>
                   {last.error && (
-                    <div className="mt-2 text-red-200/80 text-sm">
-                      {last.error}
-                    </div>
+                    <div className="mt-2 text-red-200/80 text-sm">{last.error}</div>
                   )}
 
                   {cards.length > 0 && (
