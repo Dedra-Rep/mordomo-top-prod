@@ -20,17 +20,9 @@ export type AIResponse = {
 };
 
 export type AffiliateIds = {
-  amazonTag?: string;       // ex: mordomoai-20
-  mercadoLivreId?: string;
-  shopeeId?: string;
-  ebayId?: string;
-  aliexpressId?: string;
-};
-
-export type SubscriberProfile = {
-  plan: Plan;
-  name?: string;
-  email?: string;
-  ids: AffiliateIds;
-  createdAt: number;
+  amazonTag: string;
+  mercadoLivre?: string;
+  shopee?: string;
+  ebay?: string;
+  aliexpress?: string;
 };
