@@ -1,39 +1,27 @@
-import type { AIResponse, AffiliateIds, Plan, UserRole } from "../types";
+import type { ChatResponse, PlanId } from "../types";
 
-export async function sendChat(
-  message: string,
-  role: UserRole,
-  plan: Plan,
-  affiliate: AffiliateIds
-): Promise<AIResponse> {
+export async function chatApi(params: {
+  message: string;
+  plan: PlanId;
+  amazonTag?: string;
+}): Promise<ChatResponse> {
   const r = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, role, plan, affiliate }),
+    body: JSON.stringify(params),
   });
 
-  const data = await r.json().catch(() => ({}));
+  const data = (await r.json().catch(() => null)) as ChatResponse | null;
 
-  if (!r.ok) {
+  if (!data) {
     return {
-      text: data?.error ? String(data.error) : `Falha no /api/chat (HTTP ${r.status})`,
-      recommendations: [],
+      ok: false,
+      plan: params.plan,
+      reply: "Falha ao ler resposta do servidor.",
+      cards: [],
+      error: "invalid_json",
     };
   }
 
-  return {
-    text: String(data?.text || ""),
-    recommendations: Array.isArray(data?.recommendations) ? data.recommendations : [],
-  };
-}
-
-export async function unlockPlan(plan: "PRO" | "EXEC", code: string): Promise<boolean> {
-  const r = await fetch("/api/unlock", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ plan, code }),
-  });
-
-  const data = await r.json().catch(() => ({}));
-  return Boolean(data?.ok);
+  return data;
 }
