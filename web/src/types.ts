@@ -1,28 +1,22 @@
-export type UserRole = "MORDOMO" | "AFILIADO" | "PRO";
+export type PlanId = "free" | "pro" | "exec";
 
-export type Plan = "FREE" | "PRO" | "EXEC";
-
-export type RecommendationLabel = "MAIS BARATO" | "CUSTO-BENEFÍCIO" | "PREMIUM";
-
-export type Recommendation = {
-  label: RecommendationLabel;
+export type Card = {
+  badge: string;
   title: string;
-  why?: string;
-  query?: string;
-  priceText?: string;
-  url: string;
-  imageUrl?: string;
+  priceRange?: string;
+  bullets?: string[];
+  url?: string;
 };
 
-export type AIResponse = {
-  text: string;
-  recommendations: Recommendation[];
-};
-
-export type AffiliateIds = {
-  amazonTag: string;
-  mercadoLivre?: string;
-  shopee?: string;
-  ebay?: string;
-  aliexpress?: string;
+export type ChatResponse = {
+  ok: boolean;
+  plan: PlanId;
+  reply: string;
+  cards: Card[];
+  meta?: {
+    cached?: boolean;
+    ms?: number;
+    amazonTagUsed?: string;
+  };
+  error?: string;
 };
