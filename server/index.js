@@ -3,10 +3,8 @@ import path from "path";
 import crypto from "crypto";
 
 const app = express();
-
 app.use(express.json({ limit: "1mb" }));
 
-// Healthcheck
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
@@ -18,9 +16,6 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
-/**
- * Cache simples em memória
- */
 const cache = new Map(); // key -> { ts, value }
 function cacheGet(key) {
   const ttl = Number(process.env.CACHE_TTL_MS || 600000);
@@ -36,9 +31,6 @@ function cacheSet(key, value) {
   cache.set(key, { ts: Date.now(), value });
 }
 
-/**
- * Helpers
- */
 function sha1(input) {
   return crypto.createHash("sha1").update(input).digest("hex");
 }
@@ -58,10 +50,7 @@ function safeNumber(n, fallback) {
 async function callGemini({ prompt, timeoutMs }) {
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
-    return {
-      ok: false,
-      error: "API_KEY ausente no Cloud Run (Variáveis de ambiente).",
-    };
+    return { ok: false, error: "API_KEY ausente no Cloud Run (Variáveis de ambiente)." };
   }
 
   const model = process.env.GEMINI_MODEL || "gemini-1.5-flash";
@@ -78,66 +67,43 @@ async function callGemini({ prompt, timeoutMs }) {
       headers: { "Content-Type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: prompt }],
-          },
-        ],
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: {
-          temperature: 0.4,
+          temperature: 0.35,
           topP: 0.9,
-          maxOutputTokens: 900,
+          maxOutputTokens: 1100,
         },
       }),
     });
 
     const data = await resp.json().catch(() => ({}));
-
     if (!resp.ok) {
       return {
         ok: false,
-        error:
-          (data && data.error && data.error.message) ||
-          `Gemini erro HTTP ${resp.status}`,
+        error: data?.error?.message || `Gemini erro HTTP ${resp.status}`,
         raw: data,
       };
     }
 
     const text =
-      data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("\n") ||
-      "";
+      data?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("\n") || "";
 
     return { ok: true, text };
   } catch (e) {
     const msg =
-      e?.name === "AbortError"
-        ? `Timeout de ${timeoutMs}ms na IA`
-        : e?.message || "Erro desconhecido ao chamar Gemini";
+      e?.name === "AbortError" ? `Timeout de ${timeoutMs}ms na IA` : e?.message || "Erro ao chamar Gemini";
     return { ok: false, error: msg };
   } finally {
     clearTimeout(timer);
   }
 }
 
-/**
- * POST /api/chat
- * Body:
- * {
- *   message: string,
- *   plan: "free" | "pro" | "exec",
- *   amazonTag?: string
- * }
- *
- * Response:
- * {
- *   ok: boolean,
- *   plan: string,
- *   reply: string,
- *   cards: Array<{title, badge, priceRange, bullets, url}>,
- *   meta: { cached: boolean, ms: number, amazonTagUsed: string }
- * }
- */
+function planConfig(plan) {
+  if (plan === "exec") return { cards: 7, persona: "EXECUTIVO" };
+  if (plan === "pro") return { cards: 5, persona: "PROFISSIONAL" };
+  return { cards: 3, persona: "GRÁTIS" };
+}
+
 app.post("/api/chat", async (req, res) => {
   const t0 = Date.now();
 
@@ -145,57 +111,58 @@ app.post("/api/chat", async (req, res) => {
   const plan = String(req.body?.plan || "free").toLowerCase();
   const amazonTagFromUser = String(req.body?.amazonTag || "").trim();
 
-  if (!message) {
-    return res.status(400).json({ ok: false, error: "Mensagem vazia." });
-  }
+  if (!message) return res.status(400).json({ ok: false, error: "Mensagem vazia." });
 
   const amazonTagUsed =
     amazonTagFromUser || process.env.AMAZON_TAG_DEFAULT || "mordomoai-20";
 
   const timeoutMs = safeNumber(process.env.FAST_TIMEOUT_MS, 1200);
+  const cfg = planConfig(plan);
 
-  const cacheKey = sha1(
-    JSON.stringify({
-      message,
-      plan,
-      amazonTagUsed,
-    })
-  );
-
+  const cacheKey = sha1(JSON.stringify({ message, plan, amazonTagUsed }));
   const cached = cacheGet(cacheKey);
   if (cached) {
     return res.json({
       ...cached,
-      meta: {
-        ...cached.meta,
-        cached: true,
-        ms: Date.now() - t0,
-      },
+      meta: { ...cached.meta, cached: true, ms: Date.now() - t0 },
     });
   }
 
-  // Personas por plano (sem mexer no layout; muda só o "cérebro")
   const persona =
     plan === "exec"
-      ? `Você é o Mordomo Executivo: extremamente direto, estratégico, com foco em decisão rápida, riscos e ROI.`
+      ? `Você é o Mordomo Executivo. Seja extremamente objetivo e estratégico. Entregue decisão, trade-offs, riscos, checklist e recomendação final.`
       : plan === "pro"
-      ? `Você é o Mordomo Profissional: técnico, comparativo, recomenda custo-benefício com critérios claros.`
-      : `Você é o Mordomo Grátis: objetivo, simples, amigável, sem jargão.`;  
+      ? `Você é o Mordomo Profissional. Seja técnico e comparativo. Entregue filtros sugeridos e opções práticas.`
+      : `Você é o Mordomo Grátis. Seja simples e direto, sem jargões.`;
 
-  // Prompt “estruturado” para retornar 3 cards sempre
+  const extraJSON =
+    plan === "exec"
+      ? `"exec": {"strategy": "texto curto (2-4 frases)", "risks": ["...","..."], "checklist": ["...","...","..."]}`
+      : plan === "pro"
+      ? `"pro": {"filters": ["...","...","..."]}`
+      : "";
+
   const prompt = `
 ${persona}
 
-Tarefa: o usuário quer comprar/aprender algo. Gere SEMPRE 3 opções (MAIS BARATO, CUSTO-BENEFÍCIO, PREMIUM) em português.
-Formato de saída (JSON puro, sem markdown, sem texto fora):
+Tarefa: o usuário quer comprar/aprender algo. Gere ${cfg.cards} opções.
+Regras:
+- Sempre usar PT-BR.
+- Sempre retornar JSON puro (sem markdown, sem texto fora).
+- Cada card deve ter: badge, title, priceRange, bullets(3 itens).
+
+Formato:
 {
   "reply": "resposta curta (1-3 frases)",
   "cards": [
-    {"badge":"MAIS BARATO","title":"...","priceRange":"R$ ... - R$ ...","bullets":["...","...","..."]},
-    {"badge":"CUSTO-BENEFÍCIO","title":"...","priceRange":"R$ ... - R$ ...","bullets":["...","...","..."]},
-    {"badge":"PREMIUM","title":"...","priceRange":"R$ ... - R$ ...","bullets":["...","...","..."]}
+    {"badge":"...","title":"...","priceRange":"R$ ... - R$ ...","bullets":["...","...","..."] }
   ]
+  ${extraJSON ? "," + extraJSON : ""}
 }
+
+Badges sugeridos (use os 3 primeiros pelo menos):
+MAIS BARATO, CUSTO-BENEFÍCIO, PREMIUM
+Demais badges (se houver): OPÇÃO 4, OPÇÃO 5, etc.
 
 Usuário: ${JSON.stringify(message)}
 `;
@@ -206,36 +173,30 @@ Usuário: ${JSON.stringify(message)}
     const out = {
       ok: false,
       plan,
-      reply:
-        "Estou online, mas não consegui gerar as opções agora. Tente novamente em alguns segundos.",
+      reply: "Estou online, mas não consegui gerar as opções agora. Tente novamente em alguns segundos.",
       cards: [],
       meta: { cached: false, ms: Date.now() - t0, amazonTagUsed },
       error: ai.error,
     };
-    cacheSet(cacheKey, out); // cacheia erro curto para evitar spam
+    cacheSet(cacheKey, out);
     return res.status(200).json(out);
   }
 
-  // Tenta parsear JSON retornado
   let parsed = null;
   try {
     parsed = JSON.parse(ai.text);
   } catch {
-    // fallback robusto: se a IA não seguir o formato, cria resposta mínima
-    parsed = {
-      reply: ai.text?.slice(0, 400) || "Ok.",
-      cards: [],
-    };
+    parsed = { reply: ai.text?.slice(0, 400) || "Ok.", cards: [] };
   }
 
   const cards = Array.isArray(parsed.cards) ? parsed.cards : [];
-  const cardsWithUrls = cards.slice(0, 3).map((c) => {
-    const title = String(c?.title || "Opção");
+  const cardsWithUrls = cards.slice(0, cfg.cards).map((c, i) => {
+    const title = String(c?.title || `Opção ${i + 1}`);
     return {
-      badge: String(c?.badge || "OPÇÃO").toUpperCase(),
+      badge: String(c?.badge || `OPÇÃO ${i + 1}`).toUpperCase(),
       title,
       priceRange: String(c?.priceRange || ""),
-      bullets: Array.isArray(c?.bullets) ? c.bullets.map(String).slice(0, 5) : [],
+      bullets: Array.isArray(c?.bullets) ? c.bullets.map(String).slice(0, 6) : [],
       url: buildAmazonSearchUrl(title, amazonTagUsed),
     };
   });
@@ -245,18 +206,16 @@ Usuário: ${JSON.stringify(message)}
     plan,
     reply: String(parsed.reply || "").trim() || "Aqui vão minhas melhores opções.",
     cards: cardsWithUrls,
-    meta: {
-      cached: false,
-      ms: Date.now() - t0,
-      amazonTagUsed,
-    },
+    pro: plan === "pro" ? (parsed.pro || { filters: [] }) : undefined,
+    exec: plan === "exec" ? (parsed.exec || { strategy: "", risks: [], checklist: [] }) : undefined,
+    meta: { cached: false, ms: Date.now() - t0, amazonTagUsed },
   };
 
   cacheSet(cacheKey, out);
   return res.json(out);
 });
 
-// Servir frontend (Vite build) se existir
+// Static do Vite
 const __dirnameFix = path.dirname(new URL(import.meta.url).pathname);
 const webDist = path.join(__dirnameFix, "..", "web", "dist");
 app.use(express.static(webDist));
@@ -266,6 +225,4 @@ app.get("*", (_req, res) => {
 });
 
 const port = Number(process.env.PORT || 8080);
-app.listen(port, () => {
-  console.log("Mordomo.top server up on port", port);
-});
+app.listen(port, () => console.log("Mordomo.top server up on port", port));
